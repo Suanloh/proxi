@@ -1,5 +1,5 @@
 # Current status
 
-Prompt 01 is complete. FastAPI serves the versioned liveness endpoint, and Next.js serves the placeholder home page. Both were verified over loopback. See [Development](../docs/DEVELOPMENT.md) for startup instructions and [Architecture](../docs/ARCHITECTURE.md) for the boundary rules.
+Prompts 01 and 01.5 are complete. FastAPI still exposes only the versioned liveness endpoint. The Next.js placeholder now uses a reusable shell and centralized system light/dark tokens. The production build and loopback smoke check passed; see the [test log](TEST_LOG.md#phase-015). The [frontend roadmap](../docs/frontend/FUTURE_UI_ROADMAP.md) tracks planned screens and components.
 
-Database models, identity, Gemini, policies, enforcement, integrations and the dashboard remain unimplemented. Proceed to Prompt 02 only when it is explicitly provided.
+Database models, identity, Gemini, policies, enforcement, integrations and the dashboard remain unimplemented. Do not start the next phase without explicit approval.

@@ -32,4 +32,4 @@ npm.cmd run dev
 
 Open `http://127.0.0.1:3000`. The placeholder page starts independently of the backend. When used by server-side code, the API client defaults to `http://127.0.0.1:8000/api/v1`; set `PROXI_API_BASE_URL` in `frontend/.env.local` or the process to override it. Do not use the `NEXT_PUBLIC_` prefix. In a separate check, use `npm.cmd run build` for production compilation and TypeScript validation, then `npm.cmd run start` to serve that build.
 
-Tailwind and shadcn/ui are configured; there are no generated UI components yet.
+Tailwind and shadcn/ui are configured; there are no generated UI components yet. See the [UI guidelines](frontend/UI_GUIDELINES.md), [component architecture](frontend/COMPONENT_ARCHITECTURE.md), [screen hierarchy](frontend/SCREEN_HIERARCHY.md), and [UI roadmap](frontend/FUTURE_UI_ROADMAP.md) before adding screens.
