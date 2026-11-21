@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues and specs live as GitHub issues in this repo, driven by the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues and specs live as GitHub issues in `Suanloh/proxi`, driven by the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
