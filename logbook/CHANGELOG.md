@@ -2,6 +2,13 @@
 
 Newest prompt first. Describe actual changes, not planned work. Record test outcomes in the [test log](TEST_LOG.md).
 
+## Prompt 04 — Agent Identity Management
+
+- **Added:** Server-assigned agent IDs, four agent types, persisted registration metadata, and five owner-scoped management endpoints.
+- **Changed:** Revision `0002` adds agent metadata and migrates legacy statuses. The service rejects inactive, suspended, and revoked identities during active-status validation; revocation is terminal.
+- **Security:** The API is disabled by default. Local opt-in requires a bearer secret bound to an active application user. No production authentication or sessions, credentials, or capabilities were added.
+- **Testing:** 15 backend tests passed on disposable PostgreSQL 18.4, and Alembic reported no schema drift. See [Prompt 04 verification](TEST_LOG.md#prompt-04).
+
 ## Prompt 03 — Database & Domain Models
 
 - **Added:** PostgreSQL engine and transactions, 20 domain records and mappings, repositories, and Alembic revision `0001`.

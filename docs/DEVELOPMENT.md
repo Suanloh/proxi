@@ -42,6 +42,29 @@ $env:PROXI_TEST_DATABASE_URL = 'postgresql+psycopg://USER:ENCODED_PASSWORD@127.0
 ..\.venv\Scripts\python.exe -m pytest app\tests
 ```
 
+## Agent identity API (local development only)
+
+1. Point the backend at a local PostgreSQL database and migrate to `head`. Using a trusted SQL connection to that database, provision an active application user and copy the returned UUID:
+
+   ```sql
+   INSERT INTO proxi.users (id, email) VALUES (gen_random_uuid(), 'operator@example.test') RETURNING id;
+   ```
+
+2. Set `PROXI_DEV_IDENTITY_OWNER_ID` to that UUID and `PROXI_DEV_IDENTITY_TOKEN` to a randomly generated secret (use at least 32 random bytes encoded as hex). Use backend process variables or the ignored root `.env`. Restart the loopback-bound backend. Never put the token in a URL, frontend configuration, or source control.
+3. Use `Authorization: Bearer <token>` from a trusted local client. The token represents one configured application user, not an agent. This is not production authentication and must not be exposed beyond loopback.
+
+| Method and path | Behavior |
+| --- | --- |
+| `POST /api/v1/agents` | Register with `name`, `type`, and optional `description`; returns `201`. |
+| `GET /api/v1/agents` | List only the configured user's agents, including revoked records. |
+| `GET /api/v1/agents/{agent_id}` | Retrieve one owned identity. |
+| `PATCH /api/v1/agents/{agent_id}` | Change `name`, `type`, `description`, or `status`; set `description` to `null` to clear it. |
+| `POST /api/v1/agents/{agent_id}/revoke` | Revoke an owned agent; repeated revocation returns the same revoked record. |
+
+Names are trimmed, must be 1–120 characters, and are unique per owner. Descriptions are limited to 2,000 characters. Types are `browser`, `mcp`, `local`, and `coding` (legacy rows may still have `null`). The server assigns the UUID, UTC `created_at`, and initial `active` status. `last_seen_at` starts `null` and is not set by management operations; this release does not authenticate agent activity. `PATCH` can move non-revoked agents between `active`, `inactive`, and `suspended`; only `active` passes the service's status check. Revoked agents cannot be patched or reactivated.
+
+Agent management returns `503` without opt-in, `401` for missing or incorrect bearer credentials, `403` for a missing or disabled configured user, `404` for an unknown or unowned agent, `409` for a duplicate or prohibited status change, and `422` for invalid request data. IDs, owners, and timestamps cannot be set by the client.
+
 ## Frontend
 
 ```powershell

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 
@@ -16,11 +17,33 @@ class User(Record):
     status: str = "active"
 
 
+class AgentType(StrEnum):
+    BROWSER = "browser"
+    MCP = "mcp"
+    LOCAL = "local"
+    CODING = "coding"
+
+
+class AgentStatus(StrEnum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    SUSPENDED = "suspended"
+    REVOKED = "revoked"
+
+
 @dataclass(kw_only=True)
 class Agent(Record):
     owner_id: UUID
     name: str
-    status: str = "active"
+    status: AgentStatus = AgentStatus.ACTIVE
+    type: AgentType | None = None
+    description: str | None = None
+    last_seen_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        self.status = AgentStatus(self.status)
+        if self.type is not None:
+            self.type = AgentType(self.type)
 
 
 @dataclass(kw_only=True)

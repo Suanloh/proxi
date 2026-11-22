@@ -1,7 +1,9 @@
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app import config
 from app.config import Settings, load_settings
@@ -63,6 +65,19 @@ def test_development_dotenv_is_isolated_from_testing(
     monkeypatch.setenv("PROXI_ENV", "testing")
     settings = load_settings()
     assert (settings.env, settings.log_level) == ("testing", "WARNING")
+
+
+def test_agent_management_requires_explicit_opt_in_and_bearer() -> None:
+    settings = Settings(env="testing", dev_identity_owner_id=uuid4(), dev_identity_token=None)
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/api/v1/agents").status_code == 503
+
+    settings = Settings(env="testing", dev_identity_owner_id=uuid4(), dev_identity_token=SecretStr(uuid4().hex))
+    with TestClient(create_app(settings)) as client:
+        for headers in ({}, {"Authorization": "Bearer invalid"}):
+            response = client.get("/api/v1/agents", headers=headers)
+            assert response.status_code == 401
+            assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
 def test_invalid_environment_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -47,6 +47,7 @@ erDiagram
 ## Lifecycle and integrity
 
 - UUID primary keys, restrictive foreign keys, uniqueness/check constraints and indexes support lookups and preserve references. Persist timezone-aware timestamps; repositories reject naive values and normalize read/write timestamps to UTC. Row metadata has insert defaults and ORM-managed updates.
-- Keep disabled or deleted agents, revoked sessions and expired capabilities as records. Status and timestamps describe lifecycle state; this foundation does not evaluate whether a request may use one.
+- Keep inactive, suspended, and revoked agents, revoked sessions, and expired capabilities as records. Agent IDs are unique and names are unique per owner. Revocation is terminal in the identity service; its active-status check does not authenticate a request.
+- Migration `0002` keeps existing agent IDs and maps `disabled` to `inactive` and `deleted` to `revoked`. Legacy `type`, `description`, and `last_seen_at` start `NULL`. Downgrading to `0001` drops those three fields and maps `inactive` and `suspended` to `disabled` and `revoked` to `deleted`; it cannot restore the distinction between inactive and suspended.
 - Policy versions retain their rules and history. At most one version per policy may be active; a superseded version must carry its supersession timestamp.
 - Audit logs and other historical records expose no update or delete through their repositories. Restrictive foreign keys prevent parent deletion from cascading into audit history. Direct writes by privileged roles remain possible. Credential records hold references, not secret material.

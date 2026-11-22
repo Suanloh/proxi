@@ -62,6 +62,18 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Issues encountered:** Database settings were missing at preflight. Resolved by the approved switch from SQLite to Supabase PostgreSQL and the addition of configuration. No hosted credentials supplied; hosted connection and migration not run.
 - **Next task:** Prompt 04 — identity and agent registration, only when explicitly supplied.
 
+## Prompt 04 — Agent Identity Management
+
+- **Date:** 2026-11-22.
+- **Objective:** Persist uniquely identified agents and manage their lifecycle through owner-scoped operations.
+- **Implementation summary:** Added registration, listing, lookup, update, and revocation. The identity service rejects non-active agents during status validation and prevents ordinary updates to revoked agents. The management API is disabled by default and supports only the documented local operator boundary.
+- **Files created:** [Agent API](../backend/app/api/agents.py), [schemas](../backend/app/schs/agents.py), [service](../backend/app/svcs/identity.py), [lifecycle rules](../backend/app/core/identity/lifecycle.py), and [revision 0002](../backend/migrations/versions/0002_agent_identity.py).
+- **Files modified:** [Settings](../backend/app/config.py), [app wiring](../backend/app/main.py), [records](../backend/app/models/records.py), [repository ports](../backend/app/core/repositories.py), [ORM mappings](../backend/app/infra/db/models.py), [repository adapter](../backend/app/infra/repos/sqlalchemy.py), [app tests](../backend/app/tests/test_app.py), [database tests](../backend/app/tests/test_database.py), [environment example](../.env.example), development, security, architecture, and database guides, and affected logbook records.
+- **Tests executed:** 15 backend tests passed on disposable PostgreSQL 18.4; migration upgrade and drift check passed. See [Prompt 04 verification](TEST_LOG.md#prompt-04).
+- **Result:** Local acceptance met. `last_seen_at` remains unset until there is a trusted source of agent activity. No session, credential, or capability behavior was added.
+- **Issues encountered:** The first scratch validation attempt stopped before executing tests because the bundled PostgreSQL package lacked `pg_isready`; the retry used `pg_ctl -w` and a loopback connection probe. Hosted rollout and production user authentication were not verified.
+- **Next task:** Prompt 05, only when explicitly supplied.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

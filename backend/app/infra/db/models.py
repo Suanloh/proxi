@@ -43,12 +43,16 @@ class AgentRow(Row):
     __tablename__ = "agents"
     __table_args__ = (
         UniqueConstraint("owner_id", "name"),
-        CheckConstraint("status IN ('active', 'disabled', 'deleted')", name="status"),
+        CheckConstraint("status IN ('active', 'inactive', 'suspended', 'revoked')", name="status"),
+        CheckConstraint("type IN ('browser', 'mcp', 'local', 'coding')", name="type"),
     )
 
     owner_id: Mapped[UUID] = mapped_column(ref("users"))
     name: Mapped[str]
     status: Mapped[str] = mapped_column(server_default="active")
+    type: Mapped[str | None]
+    description: Mapped[str | None]
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AgentSessionRow(Row):

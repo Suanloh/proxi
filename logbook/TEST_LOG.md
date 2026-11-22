@@ -50,6 +50,14 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 | P03-04 | Migration and schema drift | Upgrade succeeds and ORM metadata agrees with migrated schema | Revision `0001` applied; no new upgrade operations detected | PASS | From `backend`: `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` on disposable local PostgreSQL | None |
 | P03-05 | Hosted Supabase connection and migration | Hosted schema accessible with configured permissions | Hosted database not accessed | NOT RUN | No hosted credentials supplied | Verify separately during hosted rollout |
 
+## Prompt 04
+
+| Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |
+| --- | --- | --- | --- | --- | --- | --- |
+| P04-01 | Backend regression, identity API and service, legacy migration round-trip | Scoped CRUD and revocation work; duplicates, invalid requests, and non-active identities are rejected; legacy IDs survive | 15 passed on disposable PostgreSQL 18.4 | PASS | From `backend`: `..\.venv\Scripts\python.exe -m pytest app\tests --tb=short` with `PROXI_ENV=testing` and a loopback test DSN | None |
+| P04-02 | Alembic upgrade and drift | Upgrade succeeds and ORM metadata matches the result | Head applied; no new upgrade operations detected | PASS | From `backend`: `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` on the same scratch cluster | None |
+| P04-03 | Hosted Supabase rollout | Hosted permissions, migration, and startup verified | No hosted database accessed | NOT RUN | Local acceptance uses a disposable cluster, not hosted data | Verify during an authorized rollout |
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

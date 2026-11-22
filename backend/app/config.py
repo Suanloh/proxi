@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
+from uuid import UUID
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,8 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     database_url: SecretStr | None = None
     test_database_url: SecretStr | None = None
+    dev_identity_owner_id: UUID | None = None
+    dev_identity_token: Annotated[SecretStr, Field(min_length=32)] | None = None
 
 
 class TestingSettings(Settings):

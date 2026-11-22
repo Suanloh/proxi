@@ -3,9 +3,12 @@ from datetime import datetime, timezone
 from typing import Any, Generic, cast
 from uuid import UUID
 
+from psycopg.errors import UniqueViolation
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ...core.repositories import MutableRecordRepository, RecordRepository, T
+from ...core.repositories import AgentConflict, AgentRepository, MutableRecordRepository, RecordRepository, T
 from ...models import records
 from ..db import models
 
@@ -83,6 +86,50 @@ class _MutableRepository(_Repository[T]):
             setattr(row, name, value)
         self.session.flush()
         return self._record(row)
+
+
+class _AgentRepository(_MutableRepository[records.Agent]):
+    def __init__(self, session: Session) -> None:
+        super().__init__(session, records.Agent)
+
+    def list_owned(self, owner_id: UUID) -> list[records.Agent]:
+        statement = select(models.AgentRow).where(models.AgentRow.owner_id == owner_id).order_by(
+            models.AgentRow.created_at, models.AgentRow.id,
+        )
+        return [self._record(row) for row in self.session.scalars(statement)]
+
+    def get_owned(self, owner_id: UUID, agent_id: UUID, *, for_update: bool = False) -> records.Agent | None:
+        statement = select(models.AgentRow).where(
+            models.AgentRow.owner_id == owner_id, models.AgentRow.id == agent_id,
+        )
+        if for_update:
+            statement = statement.with_for_update().execution_options(populate_existing=True)
+        row = self.session.scalar(statement)
+        return self._record(row) if row is not None else None
+
+    def add(self, record: records.Agent) -> records.Agent:
+        try:
+            return super().add(record)
+        except IntegrityError as exc:
+            self._raise_conflict(exc)
+            raise
+
+    def update(self, record: records.Agent) -> records.Agent:
+        try:
+            return super().update(record)
+        except IntegrityError as exc:
+            self._raise_conflict(exc)
+            raise
+
+    @staticmethod
+    def _raise_conflict(exc: IntegrityError) -> None:
+        cause = exc.orig
+        if isinstance(cause, UniqueViolation) and cause.diag.constraint_name in {"pk_agents", "uq_agents_owner_id"}:
+            raise AgentConflict("Agent ID or owner/name already exists") from None
+
+
+def agent_repository(session: Session) -> AgentRepository:
+    return _AgentRepository(session)
 
 
 def repository(session: Session, record_type: type[T]) -> RecordRepository[T]:
