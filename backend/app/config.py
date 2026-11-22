@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
+from uuid import UUID
 
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +17,23 @@ class Settings(BaseSettings):
 
     env: Literal["development", "testing"] = "development"
     log_level: LogLevel = "INFO"
+    database_url: SecretStr | None = None
+    test_database_url: SecretStr | None = None
+    dev_identity_owner_id: UUID | None = None
+    dev_identity_token: Annotated[SecretStr, Field(min_length=32)] | None = None
+    credential_signing_key: SecretStr | None = None
+    deepseek_api_key: Annotated[SecretStr, Field(min_length=1)] | None = None
+    deepseek_model: Annotated[str, Field(max_length=100, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")] = "deepseek-flash"
+    deepseek_timeout_seconds: Annotated[float, Field(gt=0, le=120)] = 20.0
+
+    @field_validator("credential_signing_key")
+    @classmethod
+    def validate_credential_signing_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None:
+            key = value.get_secret_value()
+            if len(key) != 64 or any(char not in "0123456789abcdefABCDEF" for char in key):
+                raise ValueError("Credential signing key must encode 32 random bytes as hex")
+        return value
 
 
 class TestingSettings(Settings):

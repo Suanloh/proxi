@@ -21,10 +21,10 @@ PROXI is a local-first security control plane between autonomous AI agents and t
 | Backend framework | FastAPI |
 | Frontend | Next.js, React, TypeScript |
 | UI | Tailwind CSS and shadcn/ui |
-| AI model | Gemini API |
+| AI model | DeepSeek API for advisory intent proposals (Prompt 06; replaces the original Gemini plan) |
 | Browser automation | Playwright |
 | MCP | Python MCP SDK |
-| Database | SQLite for the MVP |
+| Database | Supabase PostgreSQL for the MVP; disposable local PostgreSQL for automated tests |
 | ORM | SQLAlchemy |
 | Migrations | Alembic |
 | Validation | Pydantic |
@@ -41,7 +41,7 @@ Do not silently change these decisions.
 1. **Experience Layer** — dashboard, PROXI Browser, and Chrome extension.
 2. **Integration Layer** — browser, MCP, and local agent adapters.
 3. **Identity & Authorization Layer** — agent identity, sessions, credentials, and capabilities.
-4. **Intelligence & Trust Layer** — Gemini intent interpretation, behavior analysis, and dynamic trust.
+4. **Intelligence & Trust Layer** — DeepSeek intent interpretation, behavior analysis, and dynamic trust.
 5. **Policy & Enforcement Layer** — policy management, RBAC, ABAC, authorization, and `ALLOW`/`HOLD`/`BLOCK` decisions.
 6. **Data & Audit Layer** — persistence, policy history, audit logs, and security events.
 
@@ -49,11 +49,11 @@ Do not silently change these decisions.
 
 Use a modular monolith, hexagonal architecture (ports and adapters), zero trust, control-plane/data-plane separation, capability-based security, policy-based access control, human-in-the-loop authorization, event-driven internal communication, and least privilege.
 
-The core security engine must not directly depend on Playwright, Gemini, the MCP SDK, Chrome APIs, or SQLite implementation details.
+The core security engine must not directly depend on Playwright, the LLM provider, the MCP SDK, Chrome APIs, or PostgreSQL, Supabase and SQLAlchemy implementation details.
 
 ## Security invariants
 
-1. Gemini must never make the final authorization decision.
+1. The LLM provider must never make the final authorization decision.
 2. LLM output is untrusted and must be schema-validated.
 3. An LLM-generated permission proposal is not approved policy.
 4. Every protected action must be authorized by deterministic backend logic.
