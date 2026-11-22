@@ -1,25 +1,47 @@
 # Test log
 
-## Phase 01
+Append one row per check. Use `PASS` only when execution confirms the expected result, `FAIL` when it does not, and `NOT RUN` when no result was obtained. Prompts 01 and 01.5 below preserve previously recorded executions; Prompt 02 did not rerun them. Exact historical commands are not reconstructed where the original record did not capture them.
 
-| Check | Result |
-| --- | --- |
-| Backend pytest on Python 3.12.10 | 5 passed: route versioning, safe validation and unexpected errors, profile isolation/precedence, invalid profile rejection. |
-| Backend import check | 34 modules imported; no local import cycles or forbidden core imports. |
-| Live Uvicorn smoke test | HTTP 200 with `{"status":"ok"}`; verified structured startup event. |
-| Next.js build on Node.js 24.11.1 | Passed production compilation, Tailwind processing and TypeScript checks. |
-| Live Next.js production smoke test | HTTP 200; placeholder rendered; server-only API client successfully called live FastAPI with an overridden base URL. |
-| shadcn/ui CLI | Detected Next.js App Router, React Server Components, Tailwind v4, and component aliases. |
-| npm audit | No production dependency advisories reported; four moderate development advisories in the shadcn CLI dependency chain. |
+## Prompt 00
 
-No final test failures. No browser automation or tests for unimplemented domain features ran. The development-mode Next.js server was not separately smoke-tested.
+| Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |
+| --- | --- | --- | --- | --- | --- | --- |
+| P00-01 | Application suites | Not applicable to saving instructions | No application test execution recorded | NOT RUN | Documentation-only scope | None |
 
-## Phase 01.5
+## Prompt 01
 
-| Check | Result |
-| --- | --- |
-| Next.js production build on Node.js 24.11.1 | Passed production compilation, Tailwind processing, TypeScript and static prerendering. |
-| Production loopback smoke test | HTTP 200 for `/`; placeholder, skip link target, theme media query and decision tokens present. |
-| Integrated browser spot check | Both OS color schemes applied, no horizontal overflow at 320px, and programmatic link activation focused `main`. The integrated browser did not confirm Tab/Enter behavior; a full keyboard/accessibility audit remains pending. |
-| Palette contrast check | Lowest checked text contrast was 7.12:1 in light mode and 8.32:1 in dark mode, including all decision pairs. |
-| Change scope | No backend, dependency, or tooling configuration changes. |
+| Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |
+| --- | --- | --- | --- | --- | --- | --- |
+| P01-01 | Backend tests | Versioning, safe errors and environment settings checks succeed | 5 passed; covered validation and unexpected errors, profile isolation/precedence and invalid profile rejection | PASS | Pytest on Python 3.12.10 | None |
+| P01-02 | Backend import boundaries | Modules import without cycles or forbidden core imports | 34 modules imported; no local cycles or forbidden core imports | PASS | Backend import/boundary check | None |
+| P01-03 | Live liveness | HTTP 200, expected JSON and structured startup event | HTTP 200, `{"status":"ok"}` and startup event observed | PASS | Live Uvicorn smoke test | None |
+| P01-04 | Frontend build | Production compilation, Tailwind and TypeScript succeed | All three succeeded | PASS | Next.js build on Node.js 24.11.1 | None |
+| P01-05 | Production frontend and backend URL override | Placeholder renders; server-only client reaches backend with override | HTTP 200, placeholder rendered and backend call succeeded with override | PASS | Live Next.js and FastAPI smoke test | None |
+| P01-06 | UI tool configuration | CLI detects framework, CSS and aliases | Detected App Router, React Server Components, Tailwind v4 and aliases | PASS | shadcn/ui CLI | None |
+| P01-07 | Production dependency advisories | No production advisories reported | None reported for production; four moderate development advisories reported | PASS | npm audit; status applies only to production advisory check | Track [KI-001](KNOWN_ISSUES.md#ki-001--shadcn-development-dependency-advisories) |
+| P01-08 | Development-mode frontend smoke | Placeholder responds in dev mode | Not separately smoke-tested | NOT RUN | Next.js development server | Run when validating a development startup change |
+| P01-09 | Browser automation and domain features | With implementations present, exercise controlled actions end to end | Implementations not present; no such tests executed | NOT RUN | No harness used | Add tests in the applicable feature prompts |
+
+## Prompt 01.5
+
+| Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |
+| --- | --- | --- | --- | --- | --- | --- |
+| P015-01 | Production build | Compilation, Tailwind, TypeScript and static prerender succeed | All succeeded | PASS | Next.js production build on Node.js 24.11.1 | None |
+| P015-02 | Production loopback smoke | `/` returns HTTP 200 with placeholder and shell assets | HTTP 200; placeholder, skip link target, theme media query and decision tokens observed | PASS | Production loopback smoke test | None |
+| P015-03 | Browser spot check | OS themes work, layout fits 320px, programmatic skip link focuses `main` | Both themes applied; no horizontal overflow at 320px; programmatic focus succeeded | PASS | Integrated browser | Native keyboard coverage tracked separately |
+| P015-04 | Palette contrast | Sample text pairs in both themes and report minimums | Lowest sampled ratios: 7.12:1 in light and 8.32:1 in dark, including decision pairs | PASS | Palette contrast check | Recheck if tokens change |
+| P015-05 | Change scope | No backend, dependency or tooling configuration changes | No such changes recorded | PASS | Change scope inspection | None |
+| P015-06 | Native keyboard and accessibility audit | Tab reaches skip link, Enter moves focus to `main`; audit remaining shell behavior | Native Tab/Enter behavior was not verified; full audit not run | NOT RUN | Programmatic activation in P015-03 is not native keyboard coverage | Track [KI-002](KNOWN_ISSUES.md#ki-002--native-keyboard-verification-pending) |
+
+## Prompt 02
+
+| Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |
+| --- | --- | --- | --- | --- | --- | --- |
+| P02-01 | Logbook acceptance and scope | 15 required records exist, entries have required fields, local links resolve, and changes are documentation-only | Verified 15 required records, 4 prompt entries, 18 test records and 89 local links/anchors; Markdown-only diff and whitespace check passed | PASS | PowerShell file, section, table, link and heading checks; `git diff --name-only HEAD`, `git ls-files --others --exclude-standard` and `git diff --check HEAD` | None |
+| P02-02 | Application regression suites | Not applicable to this documentation-only change | No application suites executed | NOT RUN | No runtime code changed | Run applicable suites when runtime changes resume |
+
+## Entry template
+
+| Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |
+| --- | --- | --- | --- | --- | --- | --- |
+| PNN-XX | Check and scope | Observable criterion | Observed output or reason not run | PASS / FAIL / NOT RUN | Command or manual method and environment | Next action or none |

@@ -1,5 +1,21 @@
 # Local development
 
+## Session workflow
+
+### Startup (required before edits)
+
+1. Read the [master instructions](../PROXI_MASTER_PROMPT.md), [current status](../logbook/CURRENT_STATUS.md), and [master log](../logbook/MASTER_LOG.md), in that order.
+2. Read the relevant [phase checkpoint](../logbook/phases/) and any linked architecture, issue, or test records. Checkpoints record progress; only the explicitly supplied numbered prompt authorizes work.
+3. Inspect the working tree and relevant sources and tests. Confirm preconditions against repository evidence, preserve existing changes, and plan only the authorized scope. If a precondition fails, stop and report it.
+
+### Shutdown (required before handoff)
+
+1. Run applicable validation and record exact commands or methods, actual results, and follow-up actions in the [test log](../logbook/TEST_LOG.md). Mark anything skipped `NOT RUN` with a reason. Stop temporary processes started for validation.
+2. Append a [master log](../logbook/MASTER_LOG.md) entry and update the [current status](../logbook/CURRENT_STATUS.md) and affected phase checkpoints. Record changes, decisions, and open issues in their respective logs when applicable. Do not record secrets or sensitive input.
+3. Report the prompt number and name, completed scope, files created or modified, tests passed, failed or not run, security considerations, incomplete work, logbook and acceptance status, and the recommended next prompt. Stop and wait for explicit authorization; if acceptance fails, report the blocker rather than marking work complete.
+
+## Running locally
+
 Use Python 3.12 and Node.js 22 or newer. Commands below use PowerShell from the repository root. Run the two servers in separate terminals.
 
 ## Backend
