@@ -2,6 +2,13 @@
 
 Newest prompt first. Describe actual changes, not planned work. Record test outcomes in the [test log](TEST_LOG.md).
 
+## Prompt 03 — Database & Domain Models
+
+- **Added:** PostgreSQL engine and transactions, 20 domain records and mappings, repositories, and Alembic revision `0001`.
+- **Changed:** Supabase PostgreSQL replaces the planned SQLite stack. Startup accepts optional database configuration without making liveness depend on it.
+- **Security:** Restrictive foreign keys preserve audit references; test settings reject hosted DSNs. Registration and authorization are not implemented.
+- **Testing:** 11 backend tests passed on disposable local PostgreSQL; see [Prompt 03 verification](TEST_LOG.md#prompt-03). Hosted Supabase was not accessed.
+
 ## Prompt 02 — Documentation & Markdown Logbook System
 
 - **Added:** Nine phase checkpoints, log entry templates and mandatory session startup/shutdown instructions.

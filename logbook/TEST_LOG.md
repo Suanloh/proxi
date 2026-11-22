@@ -40,6 +40,16 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 | P02-01 | Logbook acceptance and scope | 15 required records exist, entries have required fields, local links resolve, and changes are documentation-only | Verified 15 required records, 4 prompt entries, 18 test records and 89 local links/anchors; Markdown-only diff and whitespace check passed | PASS | PowerShell file, section, table, link and heading checks; `git diff --name-only HEAD`, `git ls-files --others --exclude-standard` and `git diff --check HEAD` | None |
 | P02-02 | Application regression suites | Not applicable to this documentation-only change | No application suites executed | NOT RUN | No runtime code changed | Run applicable suites when runtime changes resume |
 
+## Prompt 03
+
+| Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |
+| --- | --- | --- | --- | --- | --- | --- |
+| P03-01 | Existing backend startup and regression tests | App starts in test lifespan; existing tests pass | 5 passed | PASS | From `backend`: `..\.venv\Scripts\python.exe -m pytest app\tests\test_app.py` | None |
+| P03-02 | Initial database configuration preflight | Usable database configuration already available | No backend database setting, local `.env`, or database environment override found | FAIL (resolved) | Inspected settings, environment example, root files and environment variable names | User approved adding PostgreSQL configuration |
+| P03-03 | Backend regression, configured startup, migration round-trip, persistence, integrity and isolation | Backend acceptance checks pass without touching hosted or development data | 11 passed on disposable PostgreSQL 18.4 | PASS | From `backend`: `..\.venv\Scripts\python.exe -m pytest app\tests --tb=short` with loopback test DSN | None |
+| P03-04 | Migration and schema drift | Upgrade succeeds and ORM metadata agrees with migrated schema | Revision `0001` applied; no new upgrade operations detected | PASS | From `backend`: `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` on disposable local PostgreSQL | None |
+| P03-05 | Hosted Supabase connection and migration | Hosted schema accessible with configured permissions | Hosted database not accessed | NOT RUN | No hosted credentials supplied | Verify separately during hosted rollout |
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

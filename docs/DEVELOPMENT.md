@@ -30,10 +30,15 @@ Set-Location .\backend
 
 Check `http://127.0.0.1:8000/api/v1/health`. Development is the default and loads the optional root `.env`; process variables override file values. Set `PROXI_ENV=testing` in the process to skip `.env` and default to warning-level logs. `PROXI_LOG_LEVEL` overrides the default in either mode.
 
-Run tests from `backend`:
+To enable persistence, follow the [database setup and migration instructions](DATABASE.md#configuration-and-migrations).
+
+Run tests from `backend`. For PostgreSQL integration tests, use a dedicated, disposable local PostgreSQL instance with a role that can create databases. Set `PROXI_TEST_DATABASE_URL` with a literal loopback address, an explicit port, and no query options. The test fixture creates and drops a separate database for each integration test. Never use the hosted Supabase URL for tests; if the variable is absent, PostgreSQL integration tests are skipped.
+
+Example (replace placeholders):
 
 ```powershell
 $env:PROXI_ENV = 'testing'
+$env:PROXI_TEST_DATABASE_URL = 'postgresql+psycopg://USER:ENCODED_PASSWORD@127.0.0.1:PORT/postgres'
 ..\.venv\Scripts\python.exe -m pytest app\tests
 ```
 

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,8 @@ class Settings(BaseSettings):
 
     env: Literal["development", "testing"] = "development"
     log_level: LogLevel = "INFO"
+    database_url: SecretStr | None = None
+    test_database_url: SecretStr | None = None
 
 
 class TestingSettings(Settings):

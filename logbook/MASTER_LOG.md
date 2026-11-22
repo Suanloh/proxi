@@ -50,6 +50,18 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Issues encountered:** No standalone Prompt 00 commit or original execution transcript; historical claims are limited to available Git and logbook evidence.
 - **Next task:** Prompt 03 — database foundation, only when explicitly supplied.
 
+## Prompt 03 — Database & Domain Models
+
+- **Date:** 2026-11-22.
+- **Objective:** Establish persistence for the 20 domain records with Supabase PostgreSQL, SQLAlchemy and Alembic.
+- **Implementation summary:** Added transactional persistence, repository ports and adapters, the private schema and initial revision. Retain audit references and keep testing isolated from development and hosted data.
+- **Files created:** [Domain records](../backend/app/models/records.py), [repository ports](../backend/app/core/repositories.py), database [engine](../backend/app/infra/db/database.py) and [mappings](../backend/app/infra/db/models.py), [SQLAlchemy adapter](../backend/app/infra/repos/sqlalchemy.py), [Alembic configuration](../backend/alembic.ini) and [migrations](../backend/migrations/), [database tests](../backend/app/tests/test_database.py), and [ADR D-004](../docs/adr/0004-supabase-postgresql.md).
+- **Files modified:** Backend settings, lifespan and requirements; environment example, [master instructions](../PROXI_MASTER_PROMPT.md), database, architecture and development guides; affected logbook records and database checkpoint.
+- **Tests executed:** 11 backend tests passed on disposable local PostgreSQL 18.4; Alembic upgrade and drift check passed. See [Prompt 03 verification](TEST_LOG.md#prompt-03).
+- **Result:** Local acceptance met. Agent registration and authorization logic were not implemented.
+- **Issues encountered:** Database settings were missing at preflight. Resolved by the approved switch from SQLite to Supabase PostgreSQL and the addition of configuration. No hosted credentials supplied; hosted connection and migration not run.
+- **Next task:** Prompt 04 — identity and agent registration, only when explicitly supplied.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

@@ -1,25 +1,25 @@
 # Phase 01 — Database
 
-**Status:** NOT STARTED
+**Status:** COMPLETE for Prompt 03; hosted rollout not verified.
 
 This is a documentation checkpoint, not a numbered implementation prompt.
 
 ## Scope
 
-Introduce MVP persistence and schema evolution using the approved SQLite, SQLAlchemy and Alembic stack.
+Introduce persistence with Supabase PostgreSQL, SQLAlchemy and Alembic. Automated tests use disposable local PostgreSQL.
 
 ## Implementation record
 
-Only database and repository package placeholders exist. [Database scope](../../docs/DATABASE.md) records the chosen stack; no database or migrations are present.
+Added the engine and unit of work, 20 domain and ORM records, repository interfaces and adapters, and initial migration revision `0001`. See the [database guide](../../docs/DATABASE.md) for configuration, constraints and lifecycle rules.
 
 ## Dependencies and blockers
 
-Foundation is complete; wait for the database prompt to define schema scope.
+The initial missing-config preflight was resolved by approval to add PostgreSQL configuration. No hosted Supabase credentials were provided; the hosted migration was not run.
 
 ## Verification
 
-NOT RUN. Once authorized, verify migration from an empty database and persistence against a disposable database.
+All 11 backend tests passed on local PostgreSQL 18.4, including both startup modes, migration round-trip, repository persistence, foreign keys, audit retention and test isolation. Alembic reported no schema drift. See the [test log](../TEST_LOG.md#prompt-03).
 
 ## Next handoff
 
-Recommended: Prompt 03 for the database foundation, subject to its actual text. See [current status](../CURRENT_STATUS.md) for the active handoff; wait for explicit authorization.
+Prompt 04 — identity and agent registration, only when explicitly supplied. Authorization logic remains out of scope. See the [current status](../CURRENT_STATUS.md).
