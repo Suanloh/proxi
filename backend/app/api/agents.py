@@ -1,12 +1,9 @@
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager
-from secrets import compare_digest
 from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import SecretStr
 
 from ..core.identity.lifecycle import InvalidAgentStatus
 from ..core.repositories import AgentConflict
@@ -16,22 +13,15 @@ from ..svcs.identity import AgentChanges, AgentIdentityService, AgentNotFound, O
 
 
 def create_agents_router(
-    owner_id: UUID | None,
-    token: SecretStr | None,
+    authenticate_owner: Callable[..., UUID],
     identity_transaction: Callable[[Request], AbstractContextManager[AgentIdentityService]],
 ) -> APIRouter:
     router = APIRouter(prefix="/agents", tags=["agents"])
-    bearer = HTTPBearer(auto_error=False)
-    expected_token = token.get_secret_value().encode("utf-8") if token is not None else None
 
     def manage_agents(
         request: Request,
-        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+        owner_id: Annotated[UUID, Depends(authenticate_owner)],
     ) -> Iterator[tuple[AgentIdentityService, UUID]]:
-        if owner_id is None or expected_token is None:
-            raise HTTPException(status_code=503)
-        if credentials is None or not compare_digest(credentials.credentials.encode("utf-8"), expected_token):
-            raise HTTPException(status_code=401, headers={"WWW-Authenticate": "Bearer"})
         try:
             with identity_transaction(request) as identity:
                 identity.require_active_owner(owner_id)

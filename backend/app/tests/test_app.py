@@ -1,9 +1,14 @@
+from datetime import UTC, datetime
 from pathlib import Path
+from secrets import token_hex
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
+
+from app.core.creds.tokens import CredentialClaims, InvalidCredential
+from app.infra.creds.jwt import JwtCredentialCodec
 
 from app import config
 from app.config import Settings, load_settings
@@ -78,6 +83,28 @@ def test_agent_management_requires_explicit_opt_in_and_bearer() -> None:
             response = client.get("/api/v1/agents", headers=headers)
             assert response.status_code == 401
             assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_credential_codec_rejects_expiry_and_wrong_signature() -> None:
+    codec = JwtCredentialCodec(SecretStr(token_hex(32)))
+    other = JwtCredentialCodec(SecretStr(token_hex(32)))
+    now = int(datetime.now(UTC).timestamp())
+    ids = (uuid4(), uuid4(), uuid4())
+    claims = CredentialClaims(*ids, now, now + 60)
+    assert codec.decode(codec.encode(claims)) == claims
+    for invalid in (other.encode(claims), codec.encode(CredentialClaims(*ids, now - 60, now - 1)), "malformed"):
+        with pytest.raises(InvalidCredential):
+            codec.decode(invalid)
+
+
+def test_access_configuration_fails_closed() -> None:
+    with pytest.raises(ValidationError, match="credential_signing_key"):
+        Settings(env="testing", credential_signing_key=SecretStr("too-short"))
+    token = token_hex(32)
+    settings = Settings(env="testing", dev_identity_owner_id=uuid4(), dev_identity_token=SecretStr(token))
+    with TestClient(create_app(settings)) as client:
+        path = f"/api/v1/agents/{uuid4()}/sessions"
+        assert client.post(path, json={}, headers={"Authorization": f"Bearer {token}"}).status_code == 503
 
 
 def test_invalid_environment_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:

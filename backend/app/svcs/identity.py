@@ -64,9 +64,9 @@ class AgentIdentityService:
             return agent
         return self._agents.update(replace(agent, status=AgentStatus.REVOKED))
 
-    def validate_active(self, agent_id: UUID) -> Agent:
+    def validate_active(self, agent_id: UUID, *, for_update: bool = False) -> Agent:
         """Check status of an independently identified agent; a UUID is not authentication."""
-        agent = self._agents.get(agent_id)
+        agent = self._agents.get_for_update(agent_id) if for_update else self._agents.get(agent_id)
         if agent is None:
             raise AgentNotFound("Agent not found")
         require_active(agent.status)

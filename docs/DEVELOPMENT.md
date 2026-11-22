@@ -61,9 +61,15 @@ $env:PROXI_TEST_DATABASE_URL = 'postgresql+psycopg://USER:ENCODED_PASSWORD@127.0
 | `PATCH /api/v1/agents/{agent_id}` | Change `name`, `type`, `description`, or `status`; set `description` to `null` to clear it. |
 | `POST /api/v1/agents/{agent_id}/revoke` | Revoke an owned agent; repeated revocation returns the same revoked record. |
 
-Names are trimmed, must be 1–120 characters, and are unique per owner. Descriptions are limited to 2,000 characters. Types are `browser`, `mcp`, `local`, and `coding` (legacy rows may still have `null`). The server assigns the UUID, UTC `created_at`, and initial `active` status. `last_seen_at` starts `null` and is not set by management operations; this release does not authenticate agent activity. `PATCH` can move non-revoked agents between `active`, `inactive`, and `suspended`; only `active` passes the service's status check. Revoked agents cannot be patched or reactivated.
+Names are trimmed, must be 1–120 characters, and are unique per owner. Descriptions are limited to 2,000 characters. Types are `browser`, `mcp`, `local`, and `coding` (legacy rows may still have `null`). The server assigns the UUID, UTC `created_at`, and initial `active` status. `last_seen_at` starts `null` and is not set by management operations; session access checks do not update it. `PATCH` can move non-revoked agents between `active`, `inactive`, and `suspended`; only `active` passes the service's status check. Revoked agents cannot be patched or reactivated.
 
 Agent management returns `503` without opt-in, `401` for missing or incorrect bearer credentials, `403` for a missing or disabled configured user, `404` for an unknown or unowned agent, `409` for a duplicate or prohibited status change, and `422` for invalid request data. IDs, owners, and timestamps cannot be set by the client.
+
+## Agent access API (local development only)
+
+Use the same local owner setup and migrate to revision `0003` or later. Generate 32 random bytes with a cryptographically secure random generator (for example, Python `secrets.token_hex(32)`) and set the resulting 64 hex characters as `PROXI_CREDENTIAL_SIGNING_KEY` in the backend process or ignored root `.env`. Use a dedicated key, separate from the owner token, and restart the backend after configuring it. Replacing the key invalidates all previously issued agent JWTs; issue new credentials for eligible sessions as needed.
+
+Use the owner bearer to create sessions, issue credentials, and grant capabilities for existing tasks. Give the agent only its short-lived JWT, not the signing key or owner bearer. See the [endpoint contract](API.md#agent-sessions-and-access-prerequisites).
 
 ## Frontend
 

@@ -69,6 +69,7 @@ class CredentialRow(Row):
 
     agent_id: Mapped[UUID] = mapped_column(ref("agents"), index=True)
     secret_ref: Mapped[str] = mapped_column(unique=True)
+    session_id: Mapped[UUID | None] = mapped_column(ref("agent_sessions"))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -80,6 +81,8 @@ class CapabilityRow(Row):
     agent_id: Mapped[UUID] = mapped_column(ref("agents"))
     action: Mapped[str]
     resource: Mapped[str]
+    session_id: Mapped[UUID | None] = mapped_column(ref("agent_sessions"))
+    task_id: Mapped[UUID | None] = mapped_column(ref("tasks"))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

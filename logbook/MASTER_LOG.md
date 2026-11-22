@@ -74,6 +74,18 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Issues encountered:** The first scratch validation attempt stopped before executing tests because the bundled PostgreSQL package lacked `pg_isready`; the retry used `pg_ctl -w` and a loopback connection probe. Hosted rollout and production user authentication were not verified.
 - **Next task:** Prompt 05, only when explicitly supplied.
 
+## Prompt 05 — Session & Capability Management
+
+- **Date:** 2026-11-22.
+- **Objective:** Require valid agent identity, session, short-lived credential, and task-scoped capability before considering authorization.
+- **Implementation summary:** Added local owner-scoped lifecycle endpoints, a PyJWT credential codec, and a prerequisite check. Revocation remains enforceable from persistent records without storing bearer tokens.
+- **Files created:** [Access API](../backend/app/api/access.py), [owner bearer dependency](../backend/app/api/owner_auth.py), [schemas](../backend/app/schs/access.py), [service](../backend/app/svcs/access.py), [token port](../backend/app/core/creds/tokens.py), [JWT adapter](../backend/app/infra/creds/jwt.py), and [revision 0003](../backend/migrations/versions/0003_session_access.py).
+- **Files modified:** App wiring, configuration, requirements, persistence and identity adapters, [backend tests](../backend/app/tests/), [environment example](../.env.example), API, database, development and security docs, and logbook records.
+- **Tests executed:** 18 backend tests passed against disposable PostgreSQL 18.4. Alembic upgrade and drift check passed. See [Prompt 05 verification](TEST_LOG.md#prompt-05).
+- **Result:** The prerequisite gate rejects invalid, expired, revoked, or misbound access and grants no execution authority.
+- **Issues encountered:** Hosted rollout and production owner authentication were not verified. No Gemini, policy engine, or protected execution was added.
+- **Next task:** Stop at Prompt 05 pending explicit authorization.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

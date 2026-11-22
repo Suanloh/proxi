@@ -2,7 +2,8 @@ from collections.abc import Iterator
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from uuid import uuid4
+from secrets import token_hex
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -77,7 +78,7 @@ def test_migration_round_trip(database: Database) -> None:
     assert set(inspect(database.engine).get_table_names(schema="proxi")) <= {"alembic_version"}
     migrate(database, "upgrade", "head")
     with database.engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM proxi.alembic_version")) == "0002"
+        assert connection.scalar(text("SELECT version_num FROM proxi.alembic_version")) == "0003"
 
 
 def test_repositories_round_trip_all_records(migrated: Database) -> None:
@@ -295,6 +296,113 @@ def test_identity_api_persists_registration_and_guards_owner_and_transitions(mig
         with TestClient(create_app(settings.model_copy(update={"dev_identity_owner_id": blocked_owner})),
                         headers=headers) as client:
             assert client.get(path).status_code == 403
+
+
+def test_session_access_enforces_bindings_scope_expiry_and_revocation(migrated: Database) -> None:
+    with migrated.transaction() as session:
+        users = repository(session, r.User)
+        owner = users.add(r.User(email="access@example.test"))
+        foreign = users.add(r.User(email="foreign-access@example.test"))
+        agents = agent_repository(session)
+        agent = agents.add(r.Agent(owner_id=owner.id, name="Reader"))
+        other_agent = agents.add(r.Agent(owner_id=foreign.id, name="Other"))
+        tasks = mutable_repository(session, r.Task)
+        task = tasks.add(r.Task(agent_id=agent.id, objective="Read a document"))
+        foreign_task = tasks.add(r.Task(agent_id=other_agent.id, objective="Read a document"))
+
+    url = migrated.engine.url.difference_update_query(["hostaddr"])
+    owner_token = token_hex(32)
+    settings = Settings(
+        env="testing", test_database_url=SecretStr(url.render_as_string(hide_password=False)),
+        dev_identity_owner_id=owner.id, dev_identity_token=SecretStr(owner_token),
+        credential_signing_key=SecretStr(token_hex(32)),
+    )
+    agent_path = f"/api/v1/agents/{agent.id}"
+    path = f"{agent_path}/sessions"
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    with TestClient(create_app(settings)) as client:
+        assert client.post(path, json={}).status_code == 401
+        assert client.post(f"/api/v1/agents/{other_agent.id}/sessions", json={}, headers=owner_headers).status_code == 404
+        created = client.post(path, json={"ttl_seconds": 120}, headers=owner_headers)
+        assert created.status_code == 201
+        info = created.json()
+        assert info["status"] == "active" and info["agent_id"] == str(agent.id) and info["revoked_at"] is None
+        assert datetime.fromisoformat(info["expires_at"]) > datetime.fromisoformat(info["created_at"])
+        item = f"{path}/{info['id']}"
+        assert client.get(item, headers=owner_headers).json() == info
+        second = client.post(path, json={}, headers=owner_headers).json()["id"]
+        issued = client.post(f"{item}/credentials", headers=owner_headers)
+        assert issued.status_code == 201 and issued.headers["Cache-Control"] == "no-store"
+        cred = issued.json()
+        assert datetime.fromisoformat(cred["expires_at"]) <= datetime.fromisoformat(info["expires_at"])
+        agent_headers = {"Authorization": f"Bearer {cred['token']}"}
+        scope = {"task_id": str(task.id), "action": "browser.read", "resource": "approved-documents"}
+        assert client.post(f"{item}/capabilities", json=scope, headers=agent_headers).status_code == 401
+        assert client.post(f"{item}/capabilities", json={**scope, "task_id": str(foreign_task.id)},
+                           headers=owner_headers).status_code == 404
+        grant = client.post(f"{item}/capabilities", json=scope, headers=owner_headers)
+        assert grant.status_code == 201
+        cap = grant.json()
+        assert (cap["agent_id"], cap["session_id"], cap["task_id"]) == (str(agent.id), info["id"], str(task.id))
+        check_path = f"{item}/access-check"
+        operation = {**scope, "capability_id": cap["id"]}
+        assert client.post(check_path, json=operation, headers=owner_headers).status_code == 401
+        assert client.post(f"{path}/{second}/access-check", json=operation, headers=agent_headers).status_code == 401
+        assert client.post(f"/api/v1/agents/{other_agent.id}/sessions/{info['id']}/access-check",
+                           json=operation, headers=agent_headers).status_code == 401
+        assert client.post(check_path, json=operation, headers=agent_headers).status_code == 204
+        second_item = f"{path}/{second}"
+        second_cred = client.post(f"{second_item}/credentials", headers=owner_headers)
+        assert second_cred.status_code == 201
+        second_headers = {"Authorization": f"Bearer {second_cred.json()['token']}"}
+        assert client.post(f"{second_item}/access-check", json=operation, headers=second_headers).status_code == 403
+        for changes in ({"action": "browser.navigate"}, {"resource": "other"},
+                        {"task_id": str(foreign_task.id)}, {"capability_id": None}):
+            assert client.post(check_path, json={**operation, **changes}, headers=agent_headers).status_code == 403
+        with migrated.transaction() as session:
+            credentials = repository(session, r.Credential)
+            stored = credentials.get(UUID(cred["id"]))
+            assert stored is not None and stored.secret_ref == f"jwt:{cred['id']}"
+            capabilities = mutable_repository(session, r.Capability)
+            active = capabilities.get(UUID(cap["id"]))
+            assert active is not None
+            capabilities.update(replace(active, expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)))
+        assert client.post(check_path, json=operation, headers=agent_headers).status_code == 403
+        grant = client.post(f"{item}/capabilities", json=scope, headers=owner_headers)
+        assert grant.status_code == 201
+        operation["capability_id"] = grant.json()["id"]
+        cap_path = f"{item}/capabilities/{operation['capability_id']}"
+        assert client.post(f"{cap_path}/revoke", headers=owner_headers).status_code == 204
+        assert client.post(check_path, json=operation, headers=agent_headers).status_code == 403
+        assert client.post(f"{item}/credentials/{cred['id']}/revoke", headers=owner_headers).status_code == 204
+        assert client.post(check_path, json=operation, headers=agent_headers).status_code == 401
+
+        fresh = client.post(f"{item}/credentials", headers=owner_headers)
+        assert fresh.status_code == 201
+        fresh_headers = {"Authorization": f"Bearer {fresh.json()['token']}"}
+        with migrated.transaction() as session:
+            sessions = mutable_repository(session, r.AgentSession)
+            entry = sessions.get(UUID(info["id"]))
+            assert entry is not None
+            sessions.update(replace(entry, expires_at=entry.created_at + timedelta(microseconds=1)))
+        assert client.get(item, headers=owner_headers).json()["status"] == "expired"
+        assert client.post(check_path, json=operation, headers=fresh_headers).status_code == 401
+        assert client.post(f"{item}/credentials", headers=owner_headers).status_code == 409
+
+        revoked = client.post(f"{second_item}/revoke", headers=owner_headers)
+        assert revoked.status_code == 200 and revoked.json()["status"] == "revoked" and revoked.json()["revoked_at"]
+        assert client.post(f"{second_item}/revoke", headers=owner_headers).json() == revoked.json()
+        assert client.post(f"{second_item}/access-check", json=operation, headers=second_headers).status_code == 401
+
+        third = client.post(path, json={}, headers=owner_headers)
+        assert third.status_code == 201
+        third_item = f"{path}/{third.json()['id']}"
+        third_cred = client.post(f"{third_item}/credentials", headers=owner_headers)
+        assert third_cred.status_code == 201
+        third_headers = {"Authorization": f"Bearer {third_cred.json()['token']}"}
+        assert client.post(f"{agent_path}/revoke", headers=owner_headers).status_code == 200
+        assert client.post(f"{third_item}/access-check", json=operation, headers=third_headers).status_code == 401
+        assert client.post(path, json={}, headers=owner_headers).status_code == 409
 
 
 def test_testing_does_not_use_development_url(monkeypatch: pytest.MonkeyPatch) -> None:

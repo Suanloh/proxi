@@ -1,6 +1,6 @@
 # Phase 02 — Identity
 
-**Status:** IN PROGRESS — Agent Identity Management complete; downstream identity enforcement not started.
+**Status:** IN PROGRESS — Local identity, session, credential, and capability management verified; production authentication and execution integration remain out of scope.
 
 This is a documentation checkpoint, not a numbered implementation prompt.
 
@@ -10,15 +10,15 @@ Establish agent identity, sessions, credential state and capability scope.
 
 ## Implementation record
 
-Prompt 04 added persistent agent registration, four agent types, and validated lifecycle transitions through the [owner-scoped management API](../../docs/DEVELOPMENT.md#agent-identity-api-local-development-only). Revocation is terminal and only active identities pass status validation. Session, credential, and capability behavior remains out of scope.
+Prompt 04 added persistent agent registration, four agent types, and validated lifecycle transitions through the [owner-scoped management API](../../docs/DEVELOPMENT.md#agent-identity-api-local-development-only). Revocation is terminal and only active identities pass status validation. Prompt 05 added owner-scoped session and grant management, short-lived revocable JWTs, and a prerequisite check for an active identity, session, credential, and task-scoped capability. The check does not authorize or execute operations.
 
 ## Dependencies and blockers
 
-The management API requires revision `0002` and explicit opt-in for a local operator bound to an active user. Production authentication and a trusted source for last-seen timestamps are not available.
+Agent access requires revision `0003`, a dedicated signing key, and explicit opt-in for a local operator bound to an active user. Production authentication and a trusted source for last-seen timestamps are not available.
 
 ## Verification
 
-[Prompt 04 verification](../TEST_LOG.md#prompt-04) passed on disposable local PostgreSQL. Session and capability verification is not run; those features are not implemented.
+[Prompt 04 identity verification](../TEST_LOG.md#prompt-04) and [Prompt 05 session and capability verification](../TEST_LOG.md#prompt-05) passed on disposable local PostgreSQL.
 
 ## Next handoff
 

@@ -2,6 +2,13 @@
 
 Newest prompt first. Describe actual changes, not planned work. Record test outcomes in the [test log](TEST_LOG.md).
 
+## Prompt 05 — Session & Capability Management
+
+- **Added:** Owner-scoped sessions, revocable five-minute JWT credentials, and session- and task-bound capability grants.
+- **Security:** The prerequisite check rejects invalid identity, session, credential, or scope; it does not evaluate policy or execute operations.
+- **Changed:** Revision `0003` adds session and task foreign keys without dropping legacy records.
+- **Testing:** 18 backend tests passed on disposable PostgreSQL 18.4; Alembic reported no drift. See [Prompt 05 verification](TEST_LOG.md#prompt-05).
+
 ## Prompt 04 — Agent Identity Management
 
 - **Added:** Server-assigned agent IDs, four agent types, persisted registration metadata, and five owner-scoped management endpoints.

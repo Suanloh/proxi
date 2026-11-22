@@ -92,6 +92,10 @@ class _AgentRepository(_MutableRepository[records.Agent]):
     def __init__(self, session: Session) -> None:
         super().__init__(session, records.Agent)
 
+    def get_for_update(self, agent_id: UUID) -> records.Agent | None:
+        row = self.session.get(models.AgentRow, agent_id, with_for_update=True, populate_existing=True)
+        return self._record(row) if row is not None else None
+
     def list_owned(self, owner_id: UUID) -> list[records.Agent]:
         statement = select(models.AgentRow).where(models.AgentRow.owner_id == owner_id).order_by(
             models.AgentRow.created_at, models.AgentRow.id,

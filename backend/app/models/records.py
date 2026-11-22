@@ -57,6 +57,7 @@ class AgentSession(Record):
 class Credential(Record):
     agent_id: UUID
     secret_ref: str
+    session_id: UUID | None = None
     expires_at: datetime | None = None
     revoked_at: datetime | None = None
 
@@ -66,6 +67,8 @@ class Capability(Record):
     agent_id: UUID
     action: str
     resource: str
+    session_id: UUID | None = None
+    task_id: UUID | None = None
     expires_at: datetime | None = None
     revoked_at: datetime | None = None
 
