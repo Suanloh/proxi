@@ -2,6 +2,13 @@
 
 Newest prompt first. Describe actual changes, not planned work. Record test outcomes in the [test log](TEST_LOG.md).
 
+## Prompt 06 — DeepSeek Intent Interpretation
+
+- **Added:** Configurable DeepSeek adapter, validated intent and permission schemas, and owner-scoped submission and review endpoints.
+- **Security:** Explicit consent is required before sending non-sensitive task text. Proposals cannot grant authority; failures preserve existing policy and store no proposal.
+- **Changed:** Revision `0004` stores structured proposals and classified failures.
+- **Testing:** 33 backend tests passed on disposable PostgreSQL 18.4 with mocked DeepSeek; Alembic reported no drift. See [Prompt 06 verification](TEST_LOG.md#prompt-06).
+
 ## Prompt 05 — Session & Capability Management
 
 - **Added:** Owner-scoped sessions, revocable five-minute JWT credentials, and session- and task-bound capability grants.

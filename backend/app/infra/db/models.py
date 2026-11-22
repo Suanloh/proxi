@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, MetaData, UniqueConstraint, func, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 SCHEMA = "proxi"
@@ -98,12 +99,20 @@ class TaskRow(Row):
 
 class IntentInterpretationRow(Row):
     __tablename__ = "intent_interpretations"
-    __table_args__ = (CheckConstraint("status IN ('proposed', 'rejected', 'reviewed')", name="status"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('proposed', 'rejected', 'reviewed', 'failed')", name="status"),
+        CheckConstraint(
+            "(status = 'failed' AND proposal IS NULL AND failure_code IS NOT NULL) OR "
+            "(status <> 'failed' AND failure_code IS NULL)", name="failure",
+        ),
+    )
 
     task_id: Mapped[UUID] = mapped_column(ref("tasks"), index=True)
     interpreter: Mapped[str]
     summary: Mapped[str]
     status: Mapped[str] = mapped_column(server_default="proposed")
+    proposal: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
+    failure_code: Mapped[str | None]
 
 
 class PolicyRow(Row):

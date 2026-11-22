@@ -1,25 +1,19 @@
 # Phase 03 — Intelligence
 
-**Status:** NOT STARTED
-
-This is a documentation checkpoint, not a numbered implementation prompt.
+**Status:** IN PROGRESS — Prompt 06 complete; behavior analysis and trust scoring not started.
 
 ## Scope
 
-Interpret intent via Gemini as an advisory input to the security pipeline.
+Interpret intent via DeepSeek and persist advisory permission proposals for human review.
 
 ## Implementation record
 
-The LLM and intent packages are placeholders. No Gemini client, intent schema or permission proposal workflow exists.
-
-## Dependencies and blockers
-
-Require an explicitly authorized prompt. Keep Gemini behind an outbound port; its output grants no authority.
+An owner explicitly consents to sending non-sensitive task text. The adapter is isolated behind an outbound port, and the backend validates its structured output. The owner can retrieve proposals for review. Failed attempts store a classification without a proposal. Neither path grants authority. See the [intent API](../../docs/API.md#intent-proposals).
 
 ## Verification
 
-NOT RUN. Test schema validation and rejection of invalid model output once the adapter exists.
+All 33 backend tests passed against disposable PostgreSQL 18.4 with mocked DeepSeek; Alembic upgraded to `0004` and reported no schema drift. See [Prompt 06 verification](../TEST_LOG.md#prompt-06). No live inference or hosted database access was attempted.
 
 ## Next handoff
 
-Review [architecture boundaries](../../docs/ARCHITECTURE.md#hexagonal-boundaries-and-dependency-direction) before wiring an adapter. See [current status](../CURRENT_STATUS.md) for the active handoff; wait for explicit authorization.
+Stop after Prompt 06. Policy approval, evaluation, execution, and enforcement remain out of scope without separate authorization.

@@ -86,6 +86,17 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Issues encountered:** Hosted rollout and production owner authentication were not verified. No Gemini, policy engine, or protected execution was added.
 - **Next task:** Stop at Prompt 05 pending explicit authorization.
 
+## Prompt 06 — DeepSeek Intent Interpretation
+
+- **Date:** 2026-11-22.
+- **Objective:** Interpret natural-language tasks into advisory permission proposals for explicit owner review.
+- **Implementation summary:** Added a configurable [DeepSeek adapter](../backend/app/infra/llm/deepseek.py), strict [intent schemas](../backend/app/schs/intent.py), a [proposal service](../backend/app/svcs/intent.py), and [owner-scoped endpoints](../backend/app/api/intent.py). [Revision 0004](../backend/migrations/versions/0004_intent_proposals.py) stores proposals and classified failures.
+- **Files modified:** App composition, settings, persistence, dependencies, tests, environment example, API and architecture docs, and logbook.
+- **Tests executed:** 33 backend tests passed with mocked DeepSeek on disposable PostgreSQL 18.4; migration round-trip and schema drift checks passed. See [verification](TEST_LOG.md#prompt-06).
+- **Result:** Successful proposals are retrievable for review; schema-valid model suggestions are not authorization, and failures do not change existing policy.
+- **Issues encountered:** Live DeepSeek and hosted PostgreSQL were not tested.
+- **Next task:** Stop at Prompt 06. Policy evaluation and enforcement were not implemented.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

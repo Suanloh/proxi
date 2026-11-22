@@ -66,6 +66,14 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 | P05-02 | Alembic upgrade and drift | Revision `0003` applies and ORM metadata matches the schema | Upgrade passed; no new upgrade operations detected | PASS | From `backend`: `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` | None |
 | P05-03 | Hosted Supabase rollout | Hosted migration and startup verified | No hosted database accessed | NOT RUN | Verification used disposable PostgreSQL | Verify during an authorized rollout |
 
+## Prompt 06
+
+| Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |
+| --- | --- | --- | --- | --- | --- | --- |
+| P06-01 | Backend regression and intent proposal boundary | Consent and ownership are checked; valid output is persisted, invalid output is rejected, and neither proposals nor failures change authority | 33 passed, including malformed JSON, missing fields, provider error, timeout, prompt injection, owner scoping, and persistence | PASS | From `backend`: `..\.venv\Scripts\python.exe -m pytest app\tests --tb=short` with mocked DeepSeek and disposable PostgreSQL 18.4 | None |
+| P06-02 | Schema migration and drift | Revision `0004` round-trips and metadata matches the database | Round-trip passed in the test suite; Alembic detected no new upgrade operations | PASS | From `backend`: `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` on disposable PostgreSQL | None |
+| P06-03 | Live DeepSeek and hosted PostgreSQL | Verify external deployments separately | Neither service was contacted | NOT RUN | Local verification only | Verify during an authorized rollout |
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

@@ -86,6 +86,8 @@ class IntentInterpretation(Record):
     interpreter: str
     summary: str
     status: str = "proposed"
+    proposal: dict[str, object] | None = None
+    failure_code: str | None = None
 
 
 @dataclass(kw_only=True)
