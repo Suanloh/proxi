@@ -24,8 +24,14 @@ The engine evaluates, in order:
 6. Integration role (the registered agent type), action grant, and attribute conditions (exact capability IDs and type-strict trusted context). Client parameters cannot supply trusted context.
 7. Configured trust restrictions, then action approval. Any scoped policy whose conditions match can require `HOLD` for an approval-required action or sensitive resource, even when another policy grants the action. Only a request passing these checks receives `ALLOW`.
 
-The first failing check determines the reason. Policy ID order breaks ties for decision attribution, not for permission precedence. No trust scoring or action approval workflow is implemented.
+The first failing check determines the reason. Policy ID order breaks ties for decision attribution, not for permission precedence. No trust scoring is implemented.
 
 The controller accepts only explicitly registered integration/action adapters. Before synchronous dispatch it evaluates again in a fresh transaction, calls the required decision recorder, and holds the agent row lock through dispatch. Agent, session, credential, capability, and policy lifecycle mutations share that lock; policy mutations that change active authority take it before the policy lock. The recorder must be synchronous, must not re-enter these mutations, and must not log credentials or raw parameters. If recording fails, dispatch does not start. The controller accepts an injected recorder; no production audit sink is wired yet.
 
 Adapters must execute the exact authorized action and resource, validate action-specific parameters, and finish without scheduling deferred work. A `HOLD`, `BLOCK`, or missing adapter does not dispatch. No browser or MCP executor is registered, and the [check endpoint](API.md#authorization-check) never dispatches.
+
+### Human approval
+
+Only an actual enforcement `HOLD` creates an approval. It binds the action, parameters, agent, session, capability and ordered policy-gate versions to the original request UUID. The active owner can review the request, but approval does not override a hard denial or dispatch anything by itself.
+
+An exact retry with a registered adapter may claim a valid approval once. The claim commits before fresh deterministic authorization. Dispatch requires `ALLOW`, the same approval gates, and a still-live deadline. Revoked sessions, invalid credentials or capabilities, changed policy gates, rejected, cancelled, or expired requests, and consumed approvals cannot dispatch on that approval. An unsuccessful revalidation or dispatch can leave the approval consumed; this provides at-most-once dispatch attempts, not guaranteed execution. Review responses are not cached. Action parameters are persisted and visible to the owner, so callers must not place bearer tokens or other secrets in them.

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .api.access import create_access_router
 from .api.agents import create_agents_router
+from .api.approvals import create_approval_router
 from .api.authz import create_authorization_router
 from .api.errors import register_error_handlers
 from .api.health import router as health_router
@@ -18,10 +19,12 @@ from .core.creds.tokens import CredentialCodec
 from .infra.creds.jwt import JwtCredentialCodec
 from .infra.db.database import Database, database_url
 from .infra.llm.deepseek import DeepSeekAdapter
+from .infra.repos.approvals import approval_repository
 from .infra.repos.sqlalchemy import agent_repository, mutable_repository, policy_repository, repository
 from .logging_config import configure_logging
 from .models.records import AgentSession, Capability, Credential, IntentInterpretation, Task, User
 from .svcs.access import AgentAccessService
+from .svcs.approvals import ActionApprovals
 from .svcs.authz import AuthorizationEngine
 from .svcs.identity import AgentIdentityService
 from .svcs.intent import IntentInterpreter, IntentReview
@@ -42,8 +45,9 @@ def access_service(session: Session, identity: AgentIdentityService, codec: Cred
 def authorization_transaction(db: Database, codec: CredentialCodec) -> Iterator[AuthorizationEngine]:
     with db.transaction() as session:
         identity = AgentIdentityService(agent_repository(session), repository(session, User))
-        yield AuthorizationEngine(identity, access_service(session, identity, codec),
-                                  PolicyRetrieval(policy_repository(session)))
+        policies = PolicyRetrieval(policy_repository(session))
+        yield AuthorizationEngine(identity, access_service(session, identity, codec), policies,
+                                  approvals=ActionApprovals(approval_repository(session), identity, policies))
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -91,6 +95,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield engine
 
     @contextmanager
+    def approval_transaction(request: Request) -> Iterator[ActionApprovals]:
+        db: Database | None = request.app.state.database
+        if db is None:
+            raise HTTPException(status_code=503)
+        with db.transaction() as session:
+            identity = AgentIdentityService(agent_repository(session), repository(session, User))
+            yield ActionApprovals(approval_repository(session), identity, PolicyRetrieval(policy_repository(session)))
+
+    @contextmanager
     def intent_transaction(request: Request) -> Iterator[IntentReview]:
         db: Database | None = request.app.state.database
         if db is None:
@@ -122,4 +135,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(create_authorization_router(codec, authorization_check_transaction), prefix="/api/v1")
     app.include_router(create_intent_router(authenticate_owner, intent_transaction, interpreter), prefix="/api/v1")
     app.include_router(create_policy_router(authenticate_owner, policy_transaction), prefix="/api/v1")
+    app.include_router(create_approval_router(authenticate_owner, approval_transaction), prefix="/api/v1")
     return app

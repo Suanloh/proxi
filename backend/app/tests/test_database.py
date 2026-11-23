@@ -1,5 +1,6 @@
 import json
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -31,7 +32,7 @@ from app.schs.authz import ActionRequest, Decision, Outcome, Reason
 from app.schs.intent import IntentInterpretation, IntentProposal
 from app.schs.policies import PolicyDefinition
 from app.svcs.authz import AuthorizationEngine
-from app.svcs.enforcement import EnforcementController
+from app.svcs.enforcement import EnforcementController, EnforcementResult
 from app.svcs.identity import AgentIdentityService, AgentNotFound
 from app.svcs.intent import IntentFailure, IntentFailureCode, IntentReview
 from app.svcs.policies import PolicyManagement
@@ -90,7 +91,7 @@ def test_migration_round_trip(database: Database) -> None:
     assert set(inspect(database.engine).get_table_names(schema="proxi")) <= {"alembic_version"}
     migrate(database, "upgrade", "head")
     with database.engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM proxi.alembic_version")) == "0005"
+        assert connection.scalar(text("SELECT version_num FROM proxi.alembic_version")) == "0006"
 
 
 def test_repositories_round_trip_all_records(migrated: Database) -> None:
@@ -762,6 +763,111 @@ def test_enforcement_dispatch_and_revalidation(migrated: Database, authorization
     assert dispatched == ([request] if scenario == "allow" else [])
     if scenario in {"allow", "policy_revoked", "session_revoked"}:
         assert checks == 2
+
+
+@pytest.mark.parametrize("scenario", [
+    "execute", "reject", "cancel", "expire", "revoked", "revoked_after_claim", "gate_removed", "hard_deny",
+])
+def test_action_approval_workflow(migrated: Database, authorization_case: AuthorizationCase, scenario: str) -> None:
+    case, request = authorization_case, authorization_case.request
+    hold_policy = seed_authorization_policy(migrated, case, rule="hold")
+    codec = JwtCredentialCodec(case.signing_key)
+    dispatched: list[ActionRequest] = []
+    revoke_after_claim = False
+
+    def revoke_session() -> None:
+        with migrated.transaction() as session:
+            identity = AgentIdentityService(agent_repository(session), repository(session, r.User))
+            access_service(session, identity, codec).revoke_session(case.owner_id, request.agent_id,
+                                                                   request.session_id)
+
+    @contextmanager
+    def transaction() -> Iterator[AuthorizationEngine]:
+        nonlocal revoke_after_claim
+        with authorization_transaction(migrated, codec) as engine:
+            yield engine
+        if revoke_after_claim:
+            revoke_after_claim = False
+            revoke_session()
+
+    controller = EnforcementController(transaction, lambda _: None,
+                                       {(request.integration_type, request.action): dispatched.append})
+
+    def enforce(action: ActionRequest = request) -> EnforcementResult[None]:
+        return controller.enforce(action, case.token, case.capability_id)
+
+    owner_token = token_hex(32)
+    url = migrated.engine.url.difference_update_query(["hostaddr"])
+    settings = Settings(env="testing", test_database_url=SecretStr(url.render_as_string(hide_password=False)),
+                        credential_signing_key=case.signing_key, dev_identity_owner_id=case.owner_id,
+                        dev_identity_token=SecretStr(owner_token))
+    base = "/api/v1/approvals"
+    path = f"{base}/{request.request_id}"
+    headers = {"Authorization": f"Bearer {owner_token}"}
+    with TestClient(create_app(settings), headers=headers) as client:
+        assert client.get(base).json() == []
+        first = enforce()
+        assert (first.decision.outcome, first.approval_id, first.executed) == (Outcome.HOLD, request.request_id, False)
+        assert enforce().approval_id == first.approval_id
+        pending = client.get(base).json()
+        assert len(pending) == 1 and pending[0]["status"] == "PENDING"
+        assert client.get(path).json()["request"] == request.model_dump(mode="json")
+        assert client.get(path, headers={"Authorization": f"Bearer {case.token}"}).status_code == 401
+        assert not dispatched
+
+        if scenario == "expire":
+            with migrated.transaction() as session:
+                session.execute(text("UPDATE proxi.approval_requests SET expires_at = now() WHERE id = :id"),
+                                {"id": request.request_id})
+            assert client.get(path).json()["status"] == "EXPIRED"
+            assert client.post(f"{path}/approve").status_code == 409
+            assert enforce().decision.reason == Reason.APPROVAL_INVALID
+        elif scenario == "hard_deny":
+            seed_authorization_policy(migrated, case, rule="deny")
+            assert client.post(f"{path}/approve").status_code == 409
+            assert enforce().decision.reason == Reason.EXPLICIT_DENIAL
+        else:
+            operation = scenario if scenario in {"reject", "cancel"} else "approve"
+            response = client.post(f"{path}/{operation}")
+            assert response.status_code == 200
+            reviewed = response.json()
+            assert reviewed["reviewed_by"] == str(case.owner_id) and reviewed["reviewed_at"]
+            assert client.post(f"{path}/{operation}").json() == reviewed
+            assert client.post(f"{path}/{'approve' if operation != 'approve' else 'reject'}").status_code == 409
+            assert client.get(base).json() == []
+            assert client.get(base, params={"history": True}).json() == [reviewed]
+            assert not dispatched
+            if scenario == "execute":
+                modified = request.model_copy(update={"params": {"changed": True}})
+                assert enforce(modified).decision.reason == Reason.APPROVAL_INVALID
+                without_adapter = EnforcementController(transaction, lambda _: None, {})
+                assert not without_adapter.enforce(request, case.token, case.capability_id).executed
+                assert client.get(path).json()["consumed_at"] is None
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    results = list(pool.map(enforce, (request, request)))
+                assert sorted((result.executed, result.decision.reason) for result in results) == [
+                    (False, Reason.APPROVAL_INVALID), (True, Reason.CHECKS_PASSED),
+                ]
+                assert client.get(path).json()["consumed_at"]
+                assert enforce().decision.reason == Reason.APPROVAL_INVALID
+            elif scenario in {"revoked", "revoked_after_claim"}:
+                if scenario == "revoked":
+                    revoke_session()
+                else:
+                    revoke_after_claim = True
+                assert enforce().decision.reason == Reason.SESSION_REVOKED
+                assert bool(client.get(path).json()["consumed_at"]) is (scenario == "revoked_after_claim")
+            elif scenario == "gate_removed":
+                seed_authorization_policy(migrated, case, rule="allow")
+                with migrated.transaction() as session:
+                    identity = AgentIdentityService(agent_repository(session), repository(session, r.User))
+                    intents = IntentReview(identity, repository(session, r.Task), repository(session, r.IntentInterpretation))
+                    PolicyManagement(identity, intents, policy_repository(session)).revoke(case.owner_id, hold_policy, 1)
+                assert enforce().decision.reason == Reason.APPROVAL_INVALID
+            else:
+                assert reviewed["status"] == {"reject": "REJECTED", "cancel": "CANCELLED"}[operation]
+                assert enforce().decision.reason == Reason.APPROVAL_INVALID
+    assert dispatched == ([request] if scenario == "execute" else [])
 
 
 def test_testing_does_not_use_development_url(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -54,6 +54,7 @@ class Reason(StrEnum):
     CONDITIONS_NOT_MET = "conditions_not_met"
     TRUST_RESTRICTED = "trust_restricted"
     APPROVAL_REQUIRED = "approval_required"
+    APPROVAL_INVALID = "approval_invalid"
     CHECKS_PASSED = "checks_passed"
     ADAPTER_UNAVAILABLE = "adapter_unavailable"
 
@@ -72,6 +73,7 @@ class ApprovalInfo(BaseModel):
     reviewer_id: UUID
     action: Action
     resource: ShortText
+    policy_version_ids: tuple[UUID, ...]
 
 
 class Decision(BaseModel):

@@ -195,14 +195,22 @@ class AuthorizationDecisionRow(Row):
 
 class ApprovalRequestRow(Row):
     __tablename__ = "approval_requests"
+    __table_args__ = (CheckConstraint(
+        "(reviewer_id IS NULL AND snapshot IS NULL AND consumed_at IS NULL) OR "
+        "(reviewer_id IS NOT NULL AND snapshot IS NOT NULL AND (consumed_at IS NULL OR consumed_at < expires_at))",
+        name="binding",
+    ),)
 
     decision_id: Mapped[UUID] = mapped_column(ref("authorization_decisions"), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    reviewer_id: Mapped[UUID | None] = mapped_column(ref("users"), index=True)
+    snapshot: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ApprovalRecordRow(Row):
     __tablename__ = "approval_records"
-    __table_args__ = (CheckConstraint("outcome IN ('approved', 'rejected')", name="outcome"),)
+    __table_args__ = (CheckConstraint("outcome IN ('approved', 'rejected', 'cancelled')", name="outcome"),)
 
     approval_request_id: Mapped[UUID] = mapped_column(ref("approval_requests"), unique=True)
     reviewer_id: Mapped[UUID] = mapped_column(ref("users"), index=True)

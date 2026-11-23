@@ -140,6 +140,9 @@ class AuthorizationDecision(Record):
 class ApprovalRequest(Record):
     decision_id: UUID
     expires_at: datetime
+    reviewer_id: UUID | None = None
+    snapshot: dict | None = field(default=None, repr=False)
+    consumed_at: datetime | None = None
 
 
 @dataclass(kw_only=True)

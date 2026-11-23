@@ -88,6 +88,12 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 - **Schema:** Migration round-trip passed in the backend suite. `alembic upgrade head` and `alembic check` succeeded; no schema drift detected.
 - **Scope:** Dispatch was tested with synchronous test adapters. No browser, MCP, hosted database, or production decision sink was exercised.
 
+## Prompt 09
+
+- **Backend regression:** 61 passed on disposable PostgreSQL 18.7 (from `backend`: `..\.venv\Scripts\python.exe -m pytest -q app\tests --tb=short`). Covers no dispatch before review, exact retry, concurrent claims and replay, rejection, cancellation, expiry, hard denial, removed policy gate, and revocation before and after a claim.
+- **Schema:** Migration round-trip passed in the suite. `alembic upgrade head` and `alembic check` succeeded with revision `0006`; no new upgrade operations detected.
+- **Scope:** Tests used synchronous test adapters and the local owner bearer. No hosted database or production executor was tested.
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

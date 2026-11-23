@@ -1,12 +1,14 @@
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from inspect import isasyncgenfunction, iscoroutinefunction, isgeneratorfunction
 from typing import Generic, TypeVar
 from uuid import UUID
 
 from ..models.records import AgentType
 from ..schs.authz import ActionRequest, ContextAttributes, Decision, Outcome, Reason
+from .approvals import invalid_approval
 from .authz import AuthorizationEngine
 
 T = TypeVar("T")
@@ -18,6 +20,7 @@ class EnforcementResult(Generic[T]):
     decision: Decision
     executed: bool = False
     result: T | None = None
+    approval_id: UUID | None = None
 
 
 class EnforcementController(Generic[T]):
@@ -38,13 +41,17 @@ class EnforcementController(Generic[T]):
         *, trusted_context: Callable[[], ContextAttributes] | None = None,
     ) -> EnforcementResult[T]:
         snapshot = request.model_copy(deep=True)
-        with self._transaction() as engine:
-            decision = engine.evaluate(snapshot, token, capability_id,
-                                       trusted_context=trusted_context() if trusted_context else None)
-        if decision.outcome != Outcome.ALLOW:
-            self._record(decision)
-            return EnforcementResult(decision)
         adapter = self._adapters.get((snapshot.integration_type, snapshot.action))
+        with self._transaction() as engine:
+            context = trusted_context() if trusted_context else None
+            decision = engine.evaluate(snapshot, token, capability_id, trusted_context=context)
+            if engine.approvals is None:
+                raise RuntimeError("Enforcement requires an approval repository")
+            decision, approval_id, claim = engine.approvals.prepare(snapshot, capability_id, decision,
+                                                                   claim=adapter is not None)
+        if claim is None and decision.outcome != Outcome.ALLOW:
+            self._record(decision)
+            return EnforcementResult(decision, approval_id=approval_id)
         if adapter is None:
             decision = Decision(request_id=snapshot.request_id, outcome=Outcome.BLOCK,
                                 reason=Reason.ADAPTER_UNAVAILABLE, failed_checks=(Reason.ADAPTER_UNAVAILABLE,),
@@ -52,11 +59,20 @@ class EnforcementController(Generic[T]):
             self._record(decision)
             return EnforcementResult(decision)
 
-        # Keep the agent lock through synchronous dispatch; revocations use the same lock.
+        # Commit the claim first so a crash or an adapter failure cannot make it reusable.
+        # Keep the agent lock through dispatch; revocations use the same lock.
         with self._transaction() as engine:
-            decision = engine.evaluate(snapshot, token, capability_id,
-                                       trusted_context=trusted_context() if trusted_context else None)
+            context = trusted_context() if trusted_context else None
+            decision = engine.evaluate(snapshot, token, capability_id, trusted_context=context, _claim=claim)
+            if claim is None:
+                if engine.approvals is None:
+                    raise RuntimeError("Enforcement requires an approval repository")
+                decision, approval_id, _ = engine.approvals.prepare(snapshot, capability_id, decision, claim=False)
             self._record(decision)
             if decision.outcome != Outcome.ALLOW:
-                return EnforcementResult(decision)
-            return EnforcementResult(decision, executed=True, result=adapter(snapshot))
+                return EnforcementResult(decision, approval_id=approval_id)
+            if claim is not None and datetime.now(UTC) >= claim.expires_at:
+                decision = invalid_approval(decision)
+                self._record(decision)
+                return EnforcementResult(decision, approval_id=approval_id)
+            return EnforcementResult(decision, executed=True, result=adapter(snapshot), approval_id=approval_id)

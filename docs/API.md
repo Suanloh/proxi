@@ -58,3 +58,17 @@ Unknown or out-of-scope resources return `404`; invalid transitions, stale or un
 `POST /api/v1/authorization/check` requires an agent bearer JWT whose agent and session match the request. Send a JSON object with `request` and `capability_id`. The `request` contains `request_id`, `agent_id`, `session_id`, `action`, `resource`, `timestamp` (timezone-aware), `integration_type`, optional `params`, and optional `task_id`. Current capabilities require a pending task and bind to its exact action and resource, so omitting `task_id` or `capability_id` cannot authorize the request.
 
 The endpoint returns HTTP `200` with `request_id`, `outcome` (`ALLOW`, `HOLD`, or `BLOCK`), `reason`, `failed_checks`, `matched_policy` (policy ID and version identifiers, when applicable), and `required_approval` for a hold. Missing, invalid, expired, or mismatched JWTs receive `401` before evaluation; the engine checks stored credential state again. The database and signing key must be configured. Responses with decisions are not cached. This endpoint does not accept trusted context, execute the action, or create an approval request. An `ALLOW` is not reusable execution authority. See [authorization and enforcement](SECURITY.md#authorization-and-enforcement).
+
+## Action approvals
+
+The enforcement controller persists a `HOLD` and returns an approval ID equal to the action's request UUID. The authorization check does not create holds. These endpoints require the local owner bearer, not an agent JWT, and only expose the owner's approvals.
+
+| Method and path | Behavior |
+| --- | --- |
+| `GET /api/v1/approvals` | List pending requests, newest first. Use `history=true` for non-pending requests. `limit` defaults to 50 (max 100); `offset` defaults to 0. |
+| `GET /api/v1/approvals/{approval_id}` | Return the action snapshot, hold reason, policy version IDs, expiry, reviewer and decision time, and claim time if consumed. |
+| `POST /api/v1/approvals/{approval_id}/approve` | Approve a pending request. Does not execute it. |
+| `POST /api/v1/approvals/{approval_id}/reject` | Reject a pending request. |
+| `POST /api/v1/approvals/{approval_id}/cancel` | Cancel a pending request. |
+
+A request starts `PENDING` and can become `APPROVED`, `REJECTED`, or `CANCELLED`. Unconsumed pending and approved requests become `EXPIRED` after five minutes; the original review is still visible in history. Repeating the same current decision returns it unchanged; conflicting or expired reviews return `409`. Unknown or out-of-scope IDs return `404`. To execute after approval, resubmit the exact action through the enforcement controller. The claim timestamp records use of the approval, not execution success.

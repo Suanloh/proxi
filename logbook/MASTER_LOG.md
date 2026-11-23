@@ -116,6 +116,13 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Remaining:** The controller requires an injected decision recorder. No production audit sink, action approval interface, browser/MCP adapter, or hosted rollout was added.
 - **Next task:** Stop at Prompt 08 and await further instructions.
 
+## Prompt 09 — Human Approval System
+
+- **Objective:** Make enforcement holds reviewable without granting unconditional execution authority.
+- **Implemented:** Persisted action and policy-gate snapshots, owner-only review and history, and durable single-use claims before fresh authorization. See the [approval API](../docs/API.md#action-approvals) and [revision 0006](../backend/migrations/versions/0006_action_approvals.py).
+- **Verified:** 61 backend tests passed on disposable PostgreSQL 18.7. Migration round-trip passed and Alembic found no schema drift. See [Prompt 09 verification](TEST_LOG.md#prompt-09).
+- **Stop point:** No trust scoring, dashboard UI, production execution adapter, or hosted rollout.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

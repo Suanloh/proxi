@@ -9,6 +9,7 @@ from ..core.creds.tokens import InvalidCredential
 from ..core.identity.lifecycle import InvalidAgentStatus, require_active
 from ..schs.authz import ActionRequest, ApprovalInfo, ContextAttributes, Decision, Outcome, Reason
 from .access import AccessRecordNotFound, AgentAccessService, CapabilityDenied, session_status
+from .approvals import ActionApprovals, ApprovalClaim
 from .identity import AgentIdentityService, AgentNotFound, OwnerNotAuthorized
 from .policy_checks import (
     ApplicablePolicy, PolicyRetrieval, action_granted, attributes_allow, needs_approval, resource_allows, role_allows,
@@ -23,7 +24,9 @@ class AuthorizationEngine:
     def __init__(
         self, identity: AgentIdentityService, access: AgentAccessService, policies: PolicyRetrieval,
         trust: TrustRestriction | None = None, clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        *, approvals: ActionApprovals | None = None,
     ) -> None:
+        self.approvals = approvals
         self._identity = identity
         self._access = access
         self._policies = policies
@@ -32,7 +35,7 @@ class AuthorizationEngine:
 
     def evaluate(
         self, request: ActionRequest, token: str, capability_id: UUID | None,
-        *, trusted_context: ContextAttributes | None = None,
+        *, trusted_context: ContextAttributes | None = None, _claim: ApprovalClaim | None = None,
     ) -> Decision:
         def block(reason: Reason, policy: ApplicablePolicy | None = None) -> Decision:
             return Decision(request_id=request.request_id, outcome=Outcome.BLOCK, reason=reason,
@@ -92,13 +95,19 @@ class AuthorizationEngine:
             return block(Reason.CONDITIONS_NOT_MET, candidates[0])
         if self._trust is not None and self._trust.allows(request.model_copy(deep=True), context.copy()) is not True:
             return block(Reason.TRUST_RESTRICTED, grants[0])
-        for policy in scoped:
-            if needs_approval(policy, request) and attributes_allow(policy, capability_id, context):
-                return Decision(
-                    request_id=request.request_id, outcome=Outcome.HOLD, reason=Reason.APPROVAL_REQUIRED,
-                    matched_policy=policy.match,
-                    required_approval=ApprovalInfo(reviewer_id=agent.owner_id, action=request.action,
-                                                   resource=request.resource),
-                )
+        gates = [policy for policy in scoped
+                 if needs_approval(policy, request) and attributes_allow(policy, capability_id, context)]
+        versions = tuple(policy.match.version_id for policy in gates)
+        if _claim is not None:
+            if (not gates or versions != _claim.policy_version_ids or agent.owner_id != _claim.reviewer_id
+                    or self._clock() >= _claim.expires_at):
+                return block(Reason.APPROVAL_INVALID)
+        elif gates:
+            return Decision(
+                request_id=request.request_id, outcome=Outcome.HOLD, reason=Reason.APPROVAL_REQUIRED,
+                matched_policy=gates[0].match,
+                required_approval=ApprovalInfo(reviewer_id=agent.owner_id, action=request.action,
+                                               resource=request.resource, policy_version_ids=versions),
+            )
         return Decision(request_id=request.request_id, outcome=Outcome.ALLOW, reason=Reason.CHECKS_PASSED,
                         matched_policy=grants[0].match)
