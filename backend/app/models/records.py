@@ -187,17 +187,31 @@ class TrustEvent(Record):
 
 
 @dataclass(kw_only=True)
-class AuditLog(Record):
+class OperationRecord(Record):
     event_type: str
     agent_id: UUID | None = None
-    action_request_id: UUID | None = None
+    owner_id: UUID | None = None
+    actor_kind: str | None = None
+    actor_id: UUID | None = None
+    session_id: UUID | None = None
+    action: str | None = None
+    resource_id: UUID | None = None
+    request_id: UUID | None = None
+    outcome: str | None = None
+    reason: str | None = None
+    correlation_id: UUID | None = None
 
 
 @dataclass(kw_only=True)
-class SecurityEvent(Record):
-    event_type: str
+class AuditLog(OperationRecord):
+    action_request_id: UUID | None = None
+    severity: str | None = None
+
+
+@dataclass(kw_only=True)
+class SecurityEvent(OperationRecord):
     severity: str
-    agent_id: UUID | None = None
+    audit_event_id: UUID | None = None
 
 
 @dataclass(kw_only=True)

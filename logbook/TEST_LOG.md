@@ -100,6 +100,12 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 - **Schema:** Migration round-trip passed in the suite. `alembic upgrade head` and `alembic check` succeeded with revision `0007`; no schema drift detected.
 - **Scope:** Tests used synchronous test adapters and the local owner bearer. No hosted database or production executor was tested.
 
+## Prompt 11
+
+- **Backend regression:** From the repository root, `.\.venv\Scripts\python.exe -m pytest -xq --tb=short` — 75 passed on disposable PostgreSQL 18.7. Covers audit persistence and rollback, classification, owner isolation, filters, request correlation, credential redaction, and application-level append-only history. Earlier runs exposed invalid fixture references and a missing expected trust update; both test issues were corrected.
+- **Schema:** Revision `0008` round-tripped in the suite. From `backend`, `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` passed with no new upgrade operations detected. Both runs used `PROXI_ENV=testing` and a disposable loopback DSN.
+- **Not run:** Hosted rollout and production execution adapter tests; validation used local PostgreSQL and test adapters. SQLite is not a supported backend; its integrity limits are documented.
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

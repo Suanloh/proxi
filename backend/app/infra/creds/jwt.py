@@ -1,9 +1,10 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 import jwt
 from pydantic import SecretStr
 
-from ...core.creds.tokens import CredentialClaims, InvalidCredential
+from ...core.creds.tokens import CredentialClaims, ExpiredCredential, InvalidCredential
 
 _ISSUER = "proxi"
 _AUDIENCE = "proxi-agent-access"
@@ -26,12 +27,15 @@ class JwtCredentialCodec:
     def decode(self, token: str) -> CredentialClaims:
         try:
             payload = jwt.decode(token, self._key, algorithms=[_ALGORITHM], issuer=_ISSUER, audience=_AUDIENCE,
-                                 options={"strict_aud": True, "require": [
+                                 options={"strict_aud": True, "verify_exp": False, "require": [
                                      "iss", "aud", "sub", "sid", "jti", "iat", "exp",
                                  ]})
             issued, expires, session = payload["iat"], payload["exp"], payload["sid"]
             if type(issued) is not int or type(expires) is not int or issued >= expires or not isinstance(session, str):
                 raise ValueError("Invalid JWT claims")
-            return CredentialClaims(UUID(payload["sub"]), UUID(session), UUID(payload["jti"]), issued, expires)
+            claims = CredentialClaims(UUID(payload["sub"]), UUID(session), UUID(payload["jti"]), issued, expires)
         except (jwt.InvalidTokenError, ValueError, TypeError, OverflowError):
             raise InvalidCredential("Invalid agent credential") from None
+        if claims.expires_at <= datetime.now(UTC).timestamp():
+            raise ExpiredCredential(claims)
+        return claims

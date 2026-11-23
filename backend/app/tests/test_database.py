@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import Settings, load_settings
 from app.core.behaviour.rules import Rule
+from app.core.events import operation_correlation
 from app.core.identity.lifecycle import InvalidAgentStatus
 from app.core.trust.rules import Band, TrustRules, Weights
 from app.core.policies.lifecycle import PolicyStatus
@@ -33,11 +34,13 @@ from app.main import access_service, authorization_transaction, create_app
 from app.models import records as r
 from app.schs.authz import ActionRequest, Decision, Outcome, Reason
 from app.schs.intent import IntentInterpretation, IntentProposal
+from app.schs.monitoring import EventFilters
 from app.schs.policies import PolicyDefinition
 from app.svcs.authz import AuthorizationEngine
 from app.svcs.enforcement import EnforcementController, EnforcementResult
 from app.svcs.identity import AgentIdentityService, AgentNotFound
 from app.svcs.intent import IntentFailure, IntentFailureCode, IntentReview
+from app.svcs.monitoring import EventQuery, event_bus
 from app.svcs.policies import PolicyManagement
 from app.svcs.trust import DynamicTrust
 
@@ -95,7 +98,7 @@ def test_migration_round_trip(database: Database) -> None:
     assert set(inspect(database.engine).get_table_names(schema="proxi")) <= {"alembic_version"}
     migrate(database, "upgrade", "head")
     with database.engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM proxi.alembic_version")) == "0007"
+        assert connection.scalar(text("SELECT version_num FROM proxi.alembic_version")) == "0008"
 
 
 def test_repositories_round_trip_all_records(migrated: Database) -> None:
@@ -641,6 +644,95 @@ def authorization_case(migrated: Database) -> AuthorizationCase:
     return AuthorizationCase(request, owner.id, source.id, cap.id, key, token)
 
 
+def test_monitoring_api_correlates_denials_and_limits_visibility(
+    migrated: Database, authorization_case: AuthorizationCase,
+) -> None:
+    case, request = authorization_case, authorization_case.request
+    codec = JwtCredentialCodec(case.signing_key)
+    claims = codec.decode(case.token)
+    expired_claims = replace(claims, issued_at=claims.issued_at - 300, expires_at=claims.issued_at - 1)
+    with migrated.transaction() as session:
+        other = repository(session, r.User).add(r.User(email="other-monitor@example.test"))
+        identity = AgentIdentityService(agent_repository(session), repository(session, r.User),
+                                        events=event_bus(session, uuid4()))
+        identity.register(other.id, "Other owner's agent", r.AgentType.LOCAL)
+    url = migrated.engine.url.difference_update_query(["hostaddr"])
+    owner_token = uuid4().hex
+    settings = Settings(env="testing", test_database_url=SecretStr(url.render_as_string(hide_password=False)),
+                        credential_signing_key=case.signing_key, dev_identity_owner_id=case.owner_id,
+                        dev_identity_token=SecretStr(owner_token))
+    headers = {"Authorization": f"Bearer {owner_token}"}
+    audit_path, security_path = "/api/v1/audit-logs", "/api/v1/security-events"
+    with TestClient(create_app(settings)) as client:
+        registered = client.post("/api/v1/agents", headers=headers, json={"name": "Audit target", "type": "local"})
+        assert registered.status_code == 201
+        audit = client.get(audit_path, headers=headers, params={"event_type": "AgentRegistered"})
+        assert audit.status_code == 200 and audit.headers["Cache-Control"] == "no-store"
+        registration, = audit.json()
+        assert registration["agent_id"] == registered.json()["id"]
+        assert registration["actor_id"] == str(case.owner_id)
+        assert registration["correlation_id"] == registered.headers["X-Correlation-ID"]
+        assert client.get(audit_path).status_code == 401
+        assert client.delete(audit_path, headers=headers).status_code == 405
+
+        payload = {"request": request.model_dump(mode="json"), "capability_id": None}
+        unauthenticated = client.post("/api/v1/authorization/check", json=payload)
+        assert unauthenticated.status_code == 401
+        anonymous_filter = {"correlation_id": unauthenticated.headers["X-Correlation-ID"]}
+        assert client.get(security_path, headers=headers, params=anonymous_filter).json() == []
+
+        supplied = str(uuid4())
+        response = client.post("/api/v1/authorization/check", json=payload,
+                               headers={"Authorization": f"Bearer {case.token}", "X-Correlation-ID": supplied})
+        assert response.status_code == 200 and response.json()["outcome"] == "BLOCK"
+        correlation = response.headers["X-Correlation-ID"]
+        assert correlation != supplied
+        filters = {"agent_id": str(request.agent_id), "correlation_id": correlation}
+        events = client.get(audit_path, headers=headers, params=filters).json()
+        assert {e["event_type"] for e in events} == {"ActionRequested", "ActionBlocked", "TrustScoreUpdated"}
+        blocked, = [e for e in events if e["event_type"] == "ActionBlocked"]
+        scoped = {**filters, "event_type": "CapabilityViolation", "severity": "warning", "decision": "BLOCK",
+                  "action": request.action, "since": blocked["created_at"]}
+        security, = client.get(security_path, headers=headers, params=scoped).json()
+        assert security["audit_event_id"] == blocked["id"]
+        assert security["request_id"] == str(request.request_id)
+        assert security["session_id"] == str(request.session_id)
+        assert client.get(security_path, headers=headers, params={**scoped, "action": "file.write"}).json() == []
+        assert client.get(security_path, headers=headers, params={**scoped, "until": blocked["created_at"]}).status_code == 422
+        assert "resource" not in blocked and case.token not in json.dumps(events)
+
+        with migrated.transaction() as session:
+            credentials = mutable_repository(session, r.Credential)
+            entry = credentials.get(claims.credential_id)
+            assert entry is not None
+            credentials.update(replace(entry, expires_at=datetime.fromtimestamp(expired_claims.expires_at, timezone.utc)))
+        expired_response = client.post("/api/v1/authorization/check", json=payload,
+                                       headers={"Authorization": f"Bearer {codec.encode(expired_claims)}"})
+        assert expired_response.status_code == 401
+        expiry, = client.get(security_path, headers=headers,
+                             params={"correlation_id": expired_response.headers["X-Correlation-ID"]}).json()
+        assert expiry["event_type"] == "ExpiredCredentialAttempt"
+        assert expiry["agent_id"] == str(request.agent_id)
+
+
+def test_monitoring_rolls_back_with_mutation_and_rejects_mutable_access(migrated: Database) -> None:
+    correlation = uuid4()
+    with migrated.transaction() as session:
+        owner = repository(session, r.User).add(r.User(email="rollback-monitor@example.test")).id
+    with pytest.raises(ValueError, match="rollback"), migrated.transaction() as session:
+        identity = AgentIdentityService(agent_repository(session), repository(session, r.User),
+                                        events=event_bus(session, correlation))
+        agent = identity.register(owner, "Rolled back", r.AgentType.LOCAL)
+        assert EventQuery(session).audit(owner, EventFilters(correlation_id=correlation))
+        raise ValueError("rollback")
+    with migrated.transaction() as session:
+        assert repository(session, r.Agent).get(agent.id) is None
+        assert EventQuery(session).audit(owner, EventFilters(correlation_id=correlation)) == []
+        for model in (r.AuditLog, r.SecurityEvent):
+            with pytest.raises(ValueError, match="append-only"):
+                mutable_repository(session, model)
+
+
 def seed_authorization_policy(db: Database, case: AuthorizationCase, *, rule: str = "allow") -> UUID:
     request = case.request
     definition = PolicyDefinition(
@@ -691,6 +783,8 @@ def test_trust_enforcement_and_owner_review(migrated: Database, authorization_ca
             assert event.reason_code == evidence.reason_code == Reason.CAPABILITY_DENIED
             assert evidence.request_id == request.request_id and evidence.session_id == request.session_id
         assert len(session.scalars(select(BehaviourEventRow)).all()) == 4
+        escalations = EventQuery(session).security(case.owner_id, EventFilters(event_type="RepeatedDeniedOperations"))
+        assert escalations and all(event.agent_id == request.agent_id for event in escalations)
 
     owner_token = token_hex(32)
     url = migrated.engine.url.difference_update_query(["hostaddr"])
@@ -884,11 +978,13 @@ def test_enforcement_dispatch_and_revalidation(migrated: Database, authorization
     decisions: list[Decision] = []
     dispatched: list[ActionRequest] = []
     checks = 0
+    correlations: list[UUID] = []
 
     @contextmanager
     def transaction() -> Iterator[AuthorizationEngine]:
         nonlocal checks
         checks += 1
+        correlations.append(operation_correlation())
         if checks == 2:
             with migrated.transaction() as session:
                 identity = AgentIdentityService(agent_repository(session), repository(session, r.User))
@@ -918,7 +1014,17 @@ def test_enforcement_dispatch_and_revalidation(migrated: Database, authorization
     assert result.executed is (scenario == "allow")
     assert dispatched == ([request] if scenario == "allow" else [])
     if scenario in {"allow", "policy_revoked", "session_revoked"}:
-        assert checks == 2
+        assert checks == 2 and correlations[0] == correlations[1]
+    with migrated.transaction() as session:
+        query = EventQuery(session)
+        filters = EventFilters(correlation_id=correlations[0])
+        audit = query.audit(case.owner_id, filters)
+        assert sum(event.event_type == "ActionRequested" for event in audit) == 1
+        if scenario == "allow":
+            assert {event.event_type for event in audit} == {"ActionRequested", "ActionAllowed", "ActionExecuted"}
+        if scenario in {"session_revoked", "no_adapter"}:
+            security, = query.security(case.owner_id, filters)
+            assert security.event_type == ("RevokedSessionAttempt" if scenario == "session_revoked" else "IntegrationError")
 
 
 @pytest.mark.parametrize("scenario", [

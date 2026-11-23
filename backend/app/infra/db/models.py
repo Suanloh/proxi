@@ -266,25 +266,44 @@ class TrustEventRow(Row):
     rule: Mapped[str | None]
 
 
-class AuditLogRow(Row):
-    __tablename__ = "audit_logs"
-    __table_args__ = (Index("ix_audit_logs_agent_time", "agent_id", "created_at"),)
+class OperationRow(Row):
+    __abstract__ = True
 
     event_type: Mapped[str]
     agent_id: Mapped[UUID | None] = mapped_column(ref("agents"))
+    owner_id: Mapped[UUID | None]
+    actor_kind: Mapped[str | None]
+    actor_id: Mapped[UUID | None]
+    session_id: Mapped[UUID | None]
+    action: Mapped[str | None]
+    resource_id: Mapped[UUID | None]
+    request_id: Mapped[UUID | None]
+    outcome: Mapped[str | None]
+    reason: Mapped[str | None]
+    correlation_id: Mapped[UUID | None]
+
+
+class AuditLogRow(OperationRow):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_agent_time", "agent_id", "created_at"),
+        Index("ix_audit_logs_owner_time", "owner_id", "created_at", "id"),
+    )
+
     action_request_id: Mapped[UUID | None] = mapped_column(ref("action_requests"), index=True)
+    severity: Mapped[str | None]
 
 
-class SecurityEventRow(Row):
+class SecurityEventRow(OperationRow):
     __tablename__ = "security_events"
     __table_args__ = (
         Index("ix_security_events_agent_time", "agent_id", "created_at"),
+        Index("ix_security_events_owner_time", "owner_id", "created_at", "id"),
         CheckConstraint("severity IN ('info', 'warning', 'critical')", name="severity"),
     )
 
-    event_type: Mapped[str]
     severity: Mapped[str]
-    agent_id: Mapped[UUID | None] = mapped_column(ref("agents"))
+    audit_event_id: Mapped[UUID | None] = mapped_column(ref("audit_logs"))
 
 
 class IntegrationConnectionRow(Row):

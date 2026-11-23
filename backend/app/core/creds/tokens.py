@@ -16,6 +16,12 @@ class CredentialClaims:
     expires_at: int
 
 
+class ExpiredCredential(InvalidCredential):
+    def __init__(self, claims: CredentialClaims) -> None:
+        super().__init__("Invalid agent credential")
+        self.claims = claims
+
+
 class CredentialCodec(Protocol):
     def encode(self, claims: CredentialClaims) -> str: ...
     def decode(self, token: str) -> CredentialClaims: ...

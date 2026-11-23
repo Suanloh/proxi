@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+from ..core.events import EventType
 from ..core.policies.lifecycle import PolicyConflict, PolicyStatus, is_approved_active
 from ..core.repositories import PolicyRepository
 from ..models.records import Policy, PolicyVersion
@@ -32,6 +33,7 @@ class PolicyManagement:
             task_id=proposal.task_id, source_proposal_id=proposal.id,
         ))
         draft = self._add_draft(policy_id, 1, definition)
+        self._identity.events.owner(EventType.POLICY_DRAFTED, owner_id, agent_id, resource_id=draft.id)
         return self._response(policy, draft, None)
 
     def list_owned(self, owner_id: UUID) -> list[PolicyResponse]:
@@ -48,7 +50,7 @@ class PolicyManagement:
     def revise(
         self, owner_id: UUID, policy_id: UUID, base_version: int, definition: PolicyDefinition,
     ) -> PolicyVersionResponse:
-        self._get_owned(owner_id, policy_id, for_update=True)
+        policy = self._get_owned(owner_id, policy_id, for_update=True)
         versions = self._policies.versions(policy_id)
         latest = versions[-1]
         if latest.version != base_version:
@@ -60,12 +62,16 @@ class PolicyManagement:
         if any(serialized == json.dumps(version.definition, sort_keys=True)
                for version in (latest, active) if version is not None):
             raise PolicyConflict("Policy definition has not changed")
-        return self._version_response(self._add_draft(policy_id, latest.version + 1, definition))
+        draft = self._add_draft(policy_id, latest.version + 1, definition)
+        self._identity.events.owner(EventType.POLICY_DRAFTED, owner_id, policy.agent_id, resource_id=draft.id)
+        return self._version_response(draft)
 
     def submit(self, owner_id: UUID, policy_id: UUID, number: int) -> PolicyVersionResponse:
-        self._get_owned(owner_id, policy_id, for_update=True)
+        policy = self._get_owned(owner_id, policy_id, for_update=True)
         version = self._find_version(self._policies.versions(policy_id), number)
-        return self._change_status(version, PolicyStatus.PENDING_APPROVAL)
+        updated = self._change_status(version, PolicyStatus.PENDING_APPROVAL)
+        self._identity.events.owner(EventType.POLICY_SUBMITTED, owner_id, policy.agent_id, resource_id=version.id)
+        return updated
 
     def approve(self, owner_id: UUID, policy_id: UUID, number: int) -> PolicyVersionResponse:
         self._lock_policy_agent(owner_id, policy_id)
@@ -84,13 +90,18 @@ class PolicyManagement:
         active = self._active(versions)
         if active is not None:
             self._policies.transition(active.id, PolicyStatus.SUPERSEDED, now)
-        return self._version_response(self._policies.transition(target.id, PolicyStatus.ACTIVE, now))
+            self._identity.events.owner(EventType.POLICY_SUPERSEDED, owner_id, policy.agent_id, resource_id=active.id)
+        updated = self._policies.transition(target.id, PolicyStatus.ACTIVE, now)
+        self._identity.events.owner(EventType.POLICY_APPROVED, owner_id, policy.agent_id, resource_id=target.id)
+        return self._version_response(updated)
 
     def revoke(self, owner_id: UUID, policy_id: UUID, number: int) -> PolicyVersionResponse:
         self._lock_policy_agent(owner_id, policy_id)
-        self._get_owned(owner_id, policy_id, for_update=True)
+        policy = self._get_owned(owner_id, policy_id, for_update=True)
         version = self._find_version(self._policies.versions(policy_id), number)
-        return self._change_status(version, PolicyStatus.REVOKED)
+        updated = self._change_status(version, PolicyStatus.REVOKED)
+        self._identity.events.owner(EventType.POLICY_REVOKED, owner_id, policy.agent_id, resource_id=version.id)
+        return updated
 
     def _lock_policy_agent(self, owner_id: UUID, policy_id: UUID) -> None:
         policy = self._get_owned(owner_id, policy_id)

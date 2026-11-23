@@ -3,6 +3,7 @@ from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
+from ..core.events import EventType
 from ..core.identity.lifecycle import require_active
 from ..core.repositories import RecordRepository
 from ..models.records import IntentInterpretation as IntentRecord, Task
@@ -84,10 +85,13 @@ class IntentReview:
     ) -> None:
         self.require_active_agent(owner, agent_id, for_update=True)
         stored_task = self._tasks.add(Task(agent_id=agent_id, objective=task))
-        self._records.add(IntentRecord(
+        failure_record = self._records.add(IntentRecord(
             task_id=stored_task.id, interpreter=interpreter, summary="No permission proposal was generated",
             status="failed", failure_code=failure.value,
         ))
+
+        self._identity.events.owner(EventType.INTEGRATION_ERROR, owner, agent_id, resource_id=failure_record.id,
+                                    outcome="failed", reason=failure.value)
 
     def get_proposal(self, owner: UUID, agent_id: UUID, interpretation_id: UUID) -> IntentProposalResponse | None:
         self._identity.require_active_owner(owner)

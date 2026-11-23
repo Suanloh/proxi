@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
+from ..core.events import EventType
 from ..core.repositories import ApprovalEntry, ApprovalRepository
 from ..models.records import ApprovalRecord, ApprovalRequest, AuthorizationDecision
 from ..schs.approvals import ApprovalDetails, ApprovalSnapshot, ApprovalStatus
@@ -147,4 +148,9 @@ class ActionApprovals:
         approval, decision, _ = entry
         reviewed = self._approvals.review(ApprovalRecord(approval_request_id=approval.id, reviewer_id=owner_id,
                                                          outcome=target.value.lower()))
+        kind = {ApprovalStatus.APPROVED: EventType.APPROVAL_GRANTED, ApprovalStatus.REJECTED: EventType.APPROVAL_REJECTED,
+                ApprovalStatus.CANCELLED: EventType.APPROVAL_CANCELLED}[target]
+        self._identity.events.owner(kind, owner_id, agent.id, resource_id=approval.id,
+                                    session_id=snapshot.request.session_id, request_id=snapshot.request.request_id,
+                                    action=snapshot.request.action, outcome=target.value.lower())
         return details((approval, decision, reviewed), now)

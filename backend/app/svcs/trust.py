@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from ..core.behaviour.rules import DENIAL_REASONS, Finding, Rule, denial
+from ..core.events import NO_EVENTS, EventBus, EventType, SecurityOperation
 from ..core.identity.lifecycle import require_active
 from ..core.repositories import RecordRepository
 from ..core.trust.rules import Band, TrustRules, bounded_score
@@ -34,11 +35,12 @@ class DynamicTrust:
     """All operations run in a transaction under the agent's existing row lock."""
 
     def __init__(self, history: TrustHistory, intents: RecordRepository[IntentInterpretation], rules: TrustRules,
-                 *, clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
+                 *, clock: Callable[[], datetime] = lambda: datetime.now(UTC), events: EventBus = NO_EVENTS) -> None:
         self._history = history
         self._intents = intents
         self._rules = rules
         self._clock = clock
+        self._events = events
 
     def _score(self, agent_id: UUID) -> TrustScore:
         return self._history.score(agent_id) or TrustScore(agent_id=agent_id, score=self._rules.initial_score)
@@ -59,6 +61,18 @@ class DynamicTrust:
             action=request.action if request else None, reviewer_id=reviewer_id,
         )
         self._history.observe(event)
+
+        def publish(kind: EventType, reason: str, outcome: str = "succeeded") -> None:
+            self._events.publish(SecurityOperation(
+                kind, owner_id=reviewer_id, actor_kind="owner" if reviewer_id else "system", actor_id=reviewer_id,
+                agent_id=score.agent_id, session_id=event.session_id, action=event.action, request_id=event.request_id,
+                resource_id=event.id, outcome=outcome, reason=reason,
+            ))
+
+        if finding.rule in {Rule.REPEATED_DENIED, Rule.SEQUENCE, Rule.UNUSUAL, Rule.REPEATED_APPROVAL}:
+            publish(EventType.SUSPICIOUS_BEHAVIOUR, finding.rule, "observed")
+        elif finding.rule == Rule.REVIEW:
+            publish(EventType.TRUST_REVIEWED, finding.reason)
         updated = replace(score, score=bounded_score(score.score, delta),
                           last_violation_at=now if violation else score.last_violation_at,
                           compliant_count=0 if violation else (score.compliant_count if compliant_count is None
@@ -69,6 +83,7 @@ class DynamicTrust:
                                             previous_score=score.score, new_score=updated.score,
                                             delta=updated.score - score.score, reason_code=finding.reason,
                                             rule=finding.rule))
+            publish(EventType.TRUST_SCORE_UPDATED, finding.reason)
         if updated != score or score.created_at is None:
             return self._history.save(updated)
         return updated

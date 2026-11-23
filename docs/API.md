@@ -78,3 +78,14 @@ A request starts `PENDING` and can become `APPROVED`, `REJECTED`, or `CANCELLED`
 `POST /api/v1/agents/{agent_id}/trust/review` requires the local owner bearer and has no request body. After the configured cooldown, an active owner can move an active owned agent up one band: suspended to restricted, or restricted to enhanced monitoring. The endpoint returns `204` without a body, `403` for an inactive owner, `404` for an unknown or unowned agent, and `409` for an inactive agent, ineligible band, or unelapsed cooldown. It cannot reactivate an agent, grant capabilities, change policy, or satisfy action approval.
 
 The authorization check can return `BLOCK` with `reason: "trust_restricted"` for an otherwise eligible request. The enforcement controller can also apply behavior signals during final revalidation, so a preview `ALLOW` is not a dispatch guarantee.
+
+## Audit and security monitoring
+
+- `GET /api/v1/audit-logs` lists structured operation records.
+- `GET /api/v1/security-events` lists classified security events. Each includes `audit_event_id` linking to its source operation.
+
+Both routes require the configured owner bearer and an active stored owner. Results include only that owner's structured events; anonymous and legacy unscoped records are not exposed. Responses are `Cache-Control: no-store`. There are no write routes.
+
+Filters combine with AND: `since` (inclusive) and `until` (exclusive) accept timezone-aware timestamps; `agent_id`, `event_type`, `action`, `decision` (`ALLOW`, `HOLD`, `BLOCK`), `severity`, and `correlation_id` are exact matches. Results are newest first, with `limit` (1–100, default 50) and `offset` (0–10000, default 0).
+
+Use the server-generated `X-Correlation-ID` response header to find rows from a request. It is independent of the action's `request_id`; inbound correlation headers are ignored. A successful access prerequisite check is recorded separately from an authorization allowance or actual dispatch.

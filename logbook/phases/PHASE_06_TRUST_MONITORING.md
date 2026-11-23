@@ -1,6 +1,6 @@
 # Phase 06 — Trust Monitoring
 
-**Status:** COMPLETE (Prompt 10)
+**Status:** COMPLETE (Prompts 10–11)
 
 ## Scope
 
@@ -13,6 +13,8 @@ Deterministic findings cover authority and scope violations, intent and sequence
 ## Verification
 
 The backend suite passed on disposable PostgreSQL, including hard-deny precedence and restrictive trust bands. See [Prompt 10 verification](../TEST_LOG.md#prompt-10).
+
+Prompt 11 added transactional audit logging and classified security events with owner-only queries. The full suite and migration checks passed on disposable PostgreSQL; see [Prompt 11 verification](../TEST_LOG.md#prompt-11).
 
 ## Next handoff
 

@@ -2,6 +2,12 @@
 
 Newest prompt first. Describe actual changes, not planned work. Record test outcomes in the [test log](TEST_LOG.md).
 
+## Prompt 11 — Audit Logging & Security Monitoring
+
+- **Added:** In-process lifecycle events, transactional audit persistence, structured security classifications, and filtered owner-scoped read endpoints.
+- **Security:** Monitoring history is append-only through the application. Records omit raw credentials and arbitrary request payloads; storage is not tamper-proof.
+- **Changed:** Revision `0008` adds structured audit fields, lookup indexes, and links from security events to their source audit records.
+
 ## Prompt 08 — Authorization & Enforcement Engine
 
 - **Added:** Normalized action requests, structured authorization decisions, a protected decision-only endpoint, and an enforcement controller with an adapter allowlist and mandatory decision recorder.

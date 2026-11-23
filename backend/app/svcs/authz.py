@@ -5,7 +5,8 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from ..core.creds.tokens import InvalidCredential
+from ..core.creds.tokens import ExpiredCredential, InvalidCredential
+from ..core.events import ACTION_EVENTS, EventType
 from ..core.identity.lifecycle import InvalidAgentStatus, require_active
 from ..schs.authz import ActionRequest, ApprovalInfo, ContextAttributes, Decision, Outcome, Reason
 from .access import AccessRecordNotFound, AgentAccessService, CapabilityDenied, session_status
@@ -35,7 +36,56 @@ class AuthorizationEngine:
         self._trust = trust
         self._clock = clock
 
+    def record_decision(self, request: ActionRequest, token: str, decision: Decision) -> None:
+        expired = False
+        try:
+            claims = self._access.decode_bound_credential(token, request.agent_id, request.session_id)
+        except ExpiredCredential as exc:
+            claims = exc.claims if (exc.claims.agent_id, exc.claims.session_id) == (
+                request.agent_id, request.session_id,
+            ) else None
+            expired = True
+        except InvalidCredential:
+            claims = None
+        agent = self._access.audit_agent(claims) if claims is not None else None
+        self._access.record_attempt(EventType.ACTION_REQUESTED, agent, request.session_id, request.action,
+                                    "requested", request_id=request.request_id)
+        reason = decision.reason.value
+        if agent is None:
+            reason = Reason.CREDENTIAL_INVALID.value
+        elif expired and decision.reason == Reason.CREDENTIAL_INVALID:
+            reason = "credential_expired"
+        self._access.record_attempt(ACTION_EVENTS[decision.outcome], agent, request.session_id, request.action,
+                                    decision.outcome, reason, request_id=request.request_id,
+                                    resource_id=decision.matched_policy.version_id if decision.matched_policy else None)
+
+    def record_execution(self, request: ActionRequest, token: str, *, succeeded: bool) -> None:
+        # Dispatch can outlast the credential lifetime. The authenticated operation is already in progress.
+        try:
+            claims = self._access.decode_bound_credential(token, request.agent_id, request.session_id)
+        except ExpiredCredential as exc:
+            claims = exc.claims if (exc.claims.agent_id, exc.claims.session_id) == (
+                request.agent_id, request.session_id,
+            ) else None
+        except InvalidCredential:
+            claims = None
+        agent = self._access.audit_agent(claims) if claims is not None else None
+        self._access.record_attempt(EventType.ACTION_EXECUTED if succeeded else EventType.INTEGRATION_ERROR,
+                                    agent, request.session_id, request.action, "succeeded" if succeeded else "failed",
+                                    None if succeeded else "adapter_failed", request_id=request.request_id)
+
     def evaluate(
+        self, request: ActionRequest, token: str, capability_id: UUID | None,
+        *, trusted_context: ContextAttributes | None = None, _claim: ApprovalClaim | None = None,
+        _dispatch: bool = False, _audit: bool = True,
+    ) -> Decision:
+        decision = self._evaluate(request, token, capability_id, trusted_context=trusted_context, _claim=_claim,
+                                  _dispatch=_dispatch)
+        if _audit:
+            self.record_decision(request, token, decision)
+        return decision
+
+    def _evaluate(
         self, request: ActionRequest, token: str, capability_id: UUID | None,
         *, trusted_context: ContextAttributes | None = None, _claim: ApprovalClaim | None = None,
         _dispatch: bool = False,

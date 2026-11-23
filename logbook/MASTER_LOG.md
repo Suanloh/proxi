@@ -129,6 +129,13 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Verified:** 73 backend tests passed on disposable PostgreSQL 18.7. Migration round-trip passed and Alembic detected no schema drift. See [Prompt 10 verification](TEST_LOG.md#prompt-10).
 - **Stop point:** No dashboard visualizations, hosted rollout, or production executor.
 
+## Prompt 11 — Audit Logging & Security Monitoring
+
+- **Implemented:** Synchronous in-process events, transactional audit and security records, and [owner-only monitoring endpoints](../docs/API.md#audit-and-security-monitoring) with filtering and correlation. Added the event bus, monitoring service, API and schemas, and [revision 0008](../backend/migrations/versions/0008_security_monitoring.py); updated operation producers, mappings, tests, and documentation.
+- **Verified:** 75 backend tests passed on disposable PostgreSQL 18.7. Migration round-trip passed and Alembic detected no schema drift. See [Prompt 11 verification](TEST_LOG.md#prompt-11).
+- **Integrity:** Application interfaces are append-only. Privileged database or file access can bypass application controls; neither PostgreSQL nor SQLite history is independently tamper-evident. See the [security notes](../docs/SECURITY.md).
+- **Stop point:** No dashboard, external broker, hosted rollout, or production execution adapter. Wait for the next authorized prompt.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

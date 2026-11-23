@@ -6,6 +6,7 @@ from inspect import isasyncgenfunction, iscoroutinefunction, isgeneratorfunction
 from typing import Generic, TypeVar
 from uuid import UUID
 
+from ..core.events import enforcement_correlation
 from ..models.records import AgentType
 from ..schs.authz import ActionRequest, ContextAttributes, Decision, Outcome, Reason
 from .approvals import invalid_approval
@@ -36,6 +37,7 @@ class EnforcementController(Generic[T]):
                 if iscoroutinefunction(target) or isasyncgenfunction(target) or isgeneratorfunction(target):
                     raise TypeError("Execution adapters must run synchronously without deferring work")
 
+    @enforcement_correlation()
     def enforce(
         self, request: ActionRequest, token: str, capability_id: UUID | None,
         *, trusted_context: Callable[[], ContextAttributes] | None = None,
@@ -44,20 +46,23 @@ class EnforcementController(Generic[T]):
         adapter = self._adapters.get((snapshot.integration_type, snapshot.action))
         with self._transaction() as engine:
             context = trusted_context() if trusted_context else None
-            decision = engine.evaluate(snapshot, token, capability_id, trusted_context=context)
+            decision = engine.evaluate(snapshot, token, capability_id, trusted_context=context, _audit=False)
             if engine.approvals is None:
                 raise RuntimeError("Enforcement requires an approval repository")
             decision, approval_id, claim = engine.approvals.prepare(snapshot, capability_id, decision,
                                                                    claim=adapter is not None)
-        if claim is None and decision.outcome != Outcome.ALLOW:
+            finished = claim is None and decision.outcome != Outcome.ALLOW
+            if not finished and adapter is None:
+                decision = Decision(request_id=snapshot.request_id, outcome=Outcome.BLOCK,
+                                    reason=Reason.ADAPTER_UNAVAILABLE, failed_checks=(Reason.ADAPTER_UNAVAILABLE,),
+                                    matched_policy=decision.matched_policy)
+                finished = True
+            if finished:
+                engine.record_decision(snapshot, token, decision)
+        if finished:
             self._record(decision)
             return EnforcementResult(decision, approval_id=approval_id)
-        if adapter is None:
-            decision = Decision(request_id=snapshot.request_id, outcome=Outcome.BLOCK,
-                                reason=Reason.ADAPTER_UNAVAILABLE, failed_checks=(Reason.ADAPTER_UNAVAILABLE,),
-                                matched_policy=decision.matched_policy)
-            self._record(decision)
-            return EnforcementResult(decision)
+        assert adapter is not None
 
         # Commit the claim first so a crash or an adapter failure cannot make it reusable.
         # Keep the agent lock through dispatch; revocations use the same lock.
@@ -65,18 +70,21 @@ class EnforcementController(Generic[T]):
         with self._transaction() as engine:
             context = trusted_context() if trusted_context else None
             decision = engine.evaluate(snapshot, token, capability_id, trusted_context=context, _claim=claim,
-                                       _dispatch=True)
+                                       _dispatch=True, _audit=False)
             if claim is None:
                 if engine.approvals is None:
                     raise RuntimeError("Enforcement requires an approval repository")
                 decision, approval_id, _ = engine.approvals.prepare(snapshot, capability_id, decision, claim=False)
             self._record(decision)
             if decision.outcome != Outcome.ALLOW:
+                engine.record_decision(snapshot, token, decision)
                 return EnforcementResult(decision, approval_id=approval_id)
             if claim is not None and datetime.now(UTC) >= claim.expires_at:
                 decision = invalid_approval(decision)
                 self._record(decision)
+                engine.record_decision(snapshot, token, decision)
                 return EnforcementResult(decision, approval_id=approval_id)
+            engine.record_decision(snapshot, token, decision)
             if engine.behaviour is not None:
                 engine.behaviour.authorized(snapshot)
             result = None
@@ -86,6 +94,7 @@ class EnforcementController(Generic[T]):
                 failure = exc
             if engine.behaviour is not None:
                 engine.behaviour.execution(snapshot, succeeded=failure is None)
+            engine.record_execution(snapshot, token, succeeded=failure is None)
         if failure is not None:
             raise failure
         return EnforcementResult(decision, executed=True, result=result, approval_id=approval_id)

@@ -4,10 +4,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID, uuid4
 
-from ..core.creds.tokens import CredentialClaims, CredentialCodec, InvalidCredential
+from ..core.creds.tokens import CredentialClaims, CredentialCodec, ExpiredCredential, InvalidCredential
+from ..core.events import EventType, SecurityOperation
 from ..core.identity.lifecycle import InvalidAgentStatus, require_active
 from ..core.repositories import MutableRecordRepository, RecordRepository
-from ..models.records import AgentSession, Capability, Credential, Task
+from ..models.records import Agent, AgentSession, Capability, Credential, Task
+from ..schs.authz import Reason
 from .identity import AgentIdentityService, AgentNotFound, OwnerNotAuthorized
 
 MAX_SESSION_SECONDS = 3600
@@ -63,7 +65,9 @@ class AgentAccessService:
         if not 1 <= ttl_seconds <= MAX_SESSION_SECONDS:
             raise ValueError("Invalid session lifetime")
         self._owned_agent(owner_id, agent_id, active=True)
-        return self._sessions.add(AgentSession(agent_id=agent_id, expires_at=self._clock() + timedelta(seconds=ttl_seconds)))
+        session = self._sessions.add(AgentSession(agent_id=agent_id, expires_at=self._clock() + timedelta(seconds=ttl_seconds)))
+        self._identity.events.owner(EventType.SESSION_CREATED, owner_id, agent_id, session_id=session.id)
+        return session
 
     def get_session(self, owner_id: UUID, agent_id: UUID, session_id: UUID) -> AgentSession:
         self._owned_agent(owner_id, agent_id)
@@ -73,6 +77,7 @@ class AgentAccessService:
         session = self.get_session(owner_id, agent_id, session_id)
         if session.revoked_at is None:
             session = self._sessions.update(replace(session, revoked_at=self._clock()))
+            self._identity.events.owner(EventType.SESSION_REVOKED, owner_id, agent_id, session_id=session.id)
         return session
 
     def issue_credential(self, owner_id: UUID, agent_id: UUID, session_id: UUID) -> tuple[Credential, str]:
@@ -89,6 +94,7 @@ class AgentAccessService:
             id=credential_id, agent_id=agent_id, session_id=session_id,
             secret_ref=f"jwt:{credential_id}", expires_at=datetime.fromtimestamp(expires, UTC),
         ))
+        self._identity.events.owner(EventType.CREDENTIAL_ISSUED, owner_id, agent_id, session_id=session_id, resource_id=entry.id)
         return entry, token
 
     def revoke_credential(self, owner_id: UUID, agent_id: UUID, session_id: UUID, credential_id: UUID) -> None:
@@ -98,6 +104,8 @@ class AgentAccessService:
             raise AccessRecordNotFound("Credential not found")
         if entry.revoked_at is None:
             self._credentials.update(replace(entry, revoked_at=self._clock()))
+            self._identity.events.owner(EventType.CREDENTIAL_REVOKED, owner_id, agent_id, session_id=session_id,
+                                        resource_id=entry.id)
 
     def _task(self, agent_id: UUID, task_id: UUID) -> Task:
         task = self._tasks.get(task_id)
@@ -117,10 +125,13 @@ class AgentAccessService:
             raise CapabilityDenied("Task is not pending")
         now = self._clock()
         self._require_session(session, now)
-        return self._capabilities.add(Capability(
+        capability = self._capabilities.add(Capability(
             agent_id=agent_id, session_id=session_id, task_id=task_id, action=action, resource=resource,
             expires_at=min(session.expires_at, now + timedelta(seconds=ttl_seconds)),
         ))
+        self._identity.events.owner(EventType.CAPABILITY_ISSUED, owner_id, agent_id, session_id=session_id,
+                                    resource_id=capability.id, action=action)
+        return capability
 
     def revoke_capability(self, owner_id: UUID, agent_id: UUID, session_id: UUID, capability_id: UUID) -> None:
         self.get_session(owner_id, agent_id, session_id)
@@ -129,22 +140,65 @@ class AgentAccessService:
             raise AccessRecordNotFound("Capability not found")
         if capability.revoked_at is None:
             self._capabilities.update(replace(capability, revoked_at=self._clock()))
+            self._identity.events.owner(EventType.CAPABILITY_REVOKED, owner_id, agent_id, session_id=session_id,
+                                        resource_id=capability.id, action=capability.action)
 
     def require_access(
         self, token: str, *, agent_id: UUID, session_id: UUID, capability_id: UUID | None,
         task_id: UUID, action: str, resource: str,
     ) -> None:
         """Validate prerequisites; this does not authorize or execute the operation."""
-        claims = self.decode_bound_credential(token, agent_id, session_id)
+        agent = None
+        reason = Reason.CREDENTIAL_INVALID.value
         try:
-            agent = self._identity.validate_active(agent_id, for_update=True)
-            self._identity.require_active_owner(agent.owner_id)
+            claims = self.decode_bound_credential(token, agent_id, session_id)
+            agent = self.audit_agent(claims)
+            active_agent = self._identity.validate_active(agent_id, for_update=True)
+            self._identity.require_active_owner(active_agent.owner_id)
             now = self._clock()
-            self._require_session(self.get_bound_session(agent_id, session_id), now)
-        except (AgentNotFound, OwnerNotAuthorized, InvalidAgentStatus, AccessRecordNotFound, InvalidSession):
+            session = self.get_bound_session(agent_id, session_id)
+            if session.revoked_at is not None:
+                reason = Reason.SESSION_REVOKED.value
+            elif session.expires_at <= now:
+                reason = Reason.SESSION_EXPIRED.value
+            self._require_session(session, now)
+            self.require_current_credential(claims, now)
+            self.require_capability(agent_id, session_id, capability_id, task_id, action, resource, self._clock())
+        except ExpiredCredential as exc:
+            if (exc.claims.agent_id, exc.claims.session_id) == (agent_id, session_id):
+                agent = self.audit_agent(exc.claims)
+            self.record_attempt(EventType.AUTHENTICATION_DENIED, agent, session_id, action, "denied",
+                                "credential_expired" if agent is not None else reason)
+            raise
+        except (InvalidCredential, AgentNotFound, OwnerNotAuthorized, InvalidAgentStatus, AccessRecordNotFound, InvalidSession):
+            self.record_attempt(EventType.AUTHENTICATION_DENIED, agent, session_id, action, "denied", reason)
             raise InvalidCredential("Agent or session is not active") from None
-        self.require_current_credential(claims, now)
-        self.require_capability(agent_id, session_id, capability_id, task_id, action, resource, self._clock())
+        except CapabilityDenied:
+            self.record_attempt(EventType.ACCESS_CHECKED, agent, session_id, action, "denied", Reason.CAPABILITY_DENIED)
+            raise
+        self.record_attempt(EventType.ACCESS_CHECKED, agent, session_id, action, "succeeded", Reason.CHECKS_PASSED)
+
+    def audit_agent(self, claims: CredentialClaims) -> Agent | None:
+        entry = self._credentials.get(claims.credential_id)
+        if (entry is None or (entry.agent_id, entry.session_id) != (claims.agent_id, claims.session_id)
+                or entry.expires_at is None or entry.expires_at.timestamp() != claims.expires_at):
+            return None
+        try:
+            self.get_bound_session(claims.agent_id, claims.session_id)
+            return self._identity.resolve(claims.agent_id)
+        except (AccessRecordNotFound, AgentNotFound):
+            return None
+
+    def record_attempt(self, kind: EventType, agent: Agent | None, session_id: UUID | None,
+                       action: str | None, outcome: str, reason: str | None = None,
+                       *, request_id: UUID | None = None, resource_id: UUID | None = None) -> None:
+        self._identity.events.publish(SecurityOperation(
+            kind, owner_id=agent.owner_id if agent else None, actor_kind="agent" if agent else "anonymous",
+            actor_id=agent.id if agent else None, agent_id=agent.id if agent else None,
+            session_id=session_id if agent else None, action=action if agent else None,
+            request_id=request_id if agent else None, resource_id=resource_id if agent else None,
+            outcome=outcome, reason=reason,
+        ))
 
     def get_bound_session(self, agent_id: UUID, session_id: UUID) -> AgentSession:
         session = self._sessions.get(session_id)
