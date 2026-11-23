@@ -68,6 +68,7 @@ class PolicyManagement:
         return self._change_status(version, PolicyStatus.PENDING_APPROVAL)
 
     def approve(self, owner_id: UUID, policy_id: UUID, number: int) -> PolicyVersionResponse:
+        self._lock_policy_agent(owner_id, policy_id)
         policy = self._get_owned(owner_id, policy_id, for_update=True)
         versions = self._policies.versions(policy_id)
         target = self._find_version(versions, number)
@@ -75,7 +76,7 @@ class PolicyManagement:
             raise PolicyConflict("Only a pending policy version can be approved")
         if policy.agent_id is None:
             raise PolicyConflict("Missing agent binding")
-        self._intents.require_active_agent(owner_id, policy.agent_id, for_update=True)
+        self._intents.require_active_agent(owner_id, policy.agent_id)
         definition = self._version_response(target).definition
         now = datetime.now(timezone.utc)
         if definition.conditions.expires_at is not None and definition.conditions.expires_at <= now:
@@ -86,9 +87,15 @@ class PolicyManagement:
         return self._version_response(self._policies.transition(target.id, PolicyStatus.ACTIVE, now))
 
     def revoke(self, owner_id: UUID, policy_id: UUID, number: int) -> PolicyVersionResponse:
+        self._lock_policy_agent(owner_id, policy_id)
         self._get_owned(owner_id, policy_id, for_update=True)
         version = self._find_version(self._policies.versions(policy_id), number)
         return self._change_status(version, PolicyStatus.REVOKED)
+
+    def _lock_policy_agent(self, owner_id: UUID, policy_id: UUID) -> None:
+        policy = self._get_owned(owner_id, policy_id)
+        if policy.agent_id is not None:
+            self._identity.get_owned(owner_id, policy.agent_id, for_update=True)
 
     def _get_owned(self, owner_id: UUID, policy_id: UUID, *, for_update: bool = False) -> Policy:
         self._identity.require_active_owner(owner_id)

@@ -15,7 +15,7 @@ The starting worktree contained project instructions and two agent documents. Th
 | Policy & Enforcement | Evaluate policy, authorize actions, coordinate approvals and enforce decisions | `core/{policies,authz,enforcement,approvals}` |
 | Data & Audit | Persist state and policy history, record audit/security events and deliver outbound IO | `infra/{db,repos,events,creds,llm}` |
 
-These are logical responsibilities within one Python backend deployment, not six network services. The HTTP boundary exposes liveness and [local-only agent identity management](DEVELOPMENT.md#agent-identity-api-local-development-only). The identity service owns registration and lifecycle decisions, with persistence behind an owner-scoped repository. Agent authentication, policy evaluation and enforcement are not implemented. The Next.js experience shell is a separate process, not a backend domain service.
+These are logical responsibilities within one Python backend deployment, not six network services. The HTTP boundary exposes liveness and [local-only agent identity management](DEVELOPMENT.md#agent-identity-api-local-development-only). The identity service owns registration and lifecycle decisions, with persistence behind an owner-scoped repository. Agent JWT authentication and deterministic policy evaluation are implemented. The [enforcement controller](SECURITY.md#authorization-and-enforcement) revalidates before dispatch, but no production executor or decision sink is wired. The Next.js experience shell is a separate process, not a backend domain service.
 
 ## Hexagonal boundaries and dependency direction
 

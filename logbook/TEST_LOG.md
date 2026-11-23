@@ -82,6 +82,12 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 | P07-02 | Migration round-trip and schema drift | Revision `0005` applies and mappings match the schema | Round-trip passed in the suite; Alembic detected no new upgrade operations | PASS | From `backend`: `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` | None |
 | P07-03 | Hosted rollout | Verify hosted migrations and endpoints | No hosted database accessed | NOT RUN | Local PostgreSQL only | Verify during an authorized rollout |
 
+## Prompt 08
+
+- **Backend regression:** `pytest -q` — 53 passed on disposable PostgreSQL 18.7. Includes policy conflicts, identity and access prerequisites, scope, approval holds, recorder failure, and session/policy revocation between authorization checks.
+- **Schema:** Migration round-trip passed in the backend suite. `alembic upgrade head` and `alembic check` succeeded; no schema drift detected.
+- **Scope:** Dispatch was tested with synchronous test adapters. No browser, MCP, hosted database, or production decision sink was exercised.
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

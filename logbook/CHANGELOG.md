@@ -2,6 +2,11 @@
 
 Newest prompt first. Describe actual changes, not planned work. Record test outcomes in the [test log](TEST_LOG.md).
 
+## Prompt 08 — Authorization & Enforcement Engine
+
+- **Added:** Normalized action requests, structured authorization decisions, a protected decision-only endpoint, and an enforcement controller with an adapter allowlist and mandatory decision recorder.
+- **Security:** Explicit denial overrides grants; `HOLD` and `BLOCK` never dispatch. The controller revalidates immediately before synchronous dispatch and serializes supported revocations against it.
+
 ## Prompt 06 — DeepSeek Intent Interpretation
 
 - **Added:** Configurable DeepSeek adapter, validated intent and permission schemas, and owner-scoped submission and review endpoints.

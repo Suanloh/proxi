@@ -1,6 +1,7 @@
 import json
 from collections.abc import Iterator
-from dataclasses import replace
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from secrets import token_hex
@@ -17,16 +18,23 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import Settings, load_settings
 from app.core.identity.lifecycle import InvalidAgentStatus
+from app.core.policies.lifecycle import PolicyStatus
 from app.core.repositories import AgentConflict
+from app.infra.creds.jwt import JwtCredentialCodec
 from app.infra.db.database import Database, database_url
 from app.infra.db.models import AgentRow
 from app.infra.llm.deepseek import DeepSeekAdapter
-from app.infra.repos.sqlalchemy import agent_repository, mutable_repository, repository
-from app.main import create_app
+from app.infra.repos.sqlalchemy import agent_repository, mutable_repository, policy_repository, repository
+from app.main import access_service, authorization_transaction, create_app
 from app.models import records as r
+from app.schs.authz import ActionRequest, Decision, Outcome, Reason
 from app.schs.intent import IntentInterpretation, IntentProposal
+from app.schs.policies import PolicyDefinition
+from app.svcs.authz import AuthorizationEngine
+from app.svcs.enforcement import EnforcementController
 from app.svcs.identity import AgentIdentityService, AgentNotFound
-from app.svcs.intent import IntentFailure, IntentFailureCode
+from app.svcs.intent import IntentFailure, IntentFailureCode, IntentReview
+from app.svcs.policies import PolicyManagement
 
 
 @pytest.fixture
@@ -594,6 +602,166 @@ def test_policy_lifecycle_and_immutable_revisions(migrated: Database) -> None:
         assert client.get(history).status_code == 404
         assert client.post(f"{version2}/approve", json={"approve": True}).status_code == 404
         assert client.post(f"{version2}/revoke").status_code == 404
+
+
+@dataclass(frozen=True)
+class AuthorizationCase:
+    request: ActionRequest
+    owner_id: UUID
+    proposal_id: UUID
+    capability_id: UUID
+    signing_key: SecretStr
+    token: str
+
+
+@pytest.fixture
+def authorization_case(migrated: Database) -> AuthorizationCase:
+    key = SecretStr(token_hex(32))
+    with migrated.transaction() as session:
+        users = repository(session, r.User)
+        owner = users.add(r.User(email="authorization@example.test"))
+        identity = AgentIdentityService(agent_repository(session), users)
+        agent = identity.register(owner.id, "Authz test", r.AgentType.LOCAL)
+        task = repository(session, r.Task).add(r.Task(agent_id=agent.id, objective="Read a document"))
+        source = repository(session, r.IntentInterpretation).add(r.IntentInterpretation(
+            task_id=task.id, interpreter="test", summary=task.objective,
+        ))
+        access = access_service(session, identity, JwtCredentialCodec(key))
+        bound = access.create_session(owner.id, agent.id, 120)
+        _, token = access.issue_credential(owner.id, agent.id, bound.id)
+        cap = access.grant_capability(owner.id, agent.id, bound.id, task.id, "file.read", "document", 120)
+        request = ActionRequest(request_id=uuid4(), agent_id=agent.id, session_id=bound.id, action="file.read",
+                                resource="document", timestamp=datetime.now(timezone.utc),
+                                integration_type=r.AgentType.LOCAL, task_id=task.id)
+    return AuthorizationCase(request, owner.id, source.id, cap.id, key, token)
+
+
+def seed_authorization_policy(db: Database, case: AuthorizationCase, *, rule: str = "allow") -> UUID:
+    request = case.request
+    definition = PolicyDefinition(
+        allowed_actions=[request.action] if rule not in {"deny", "hold"} else [],
+        denied_actions=[request.action] if rule == "deny" else [],
+        approval_required_actions=[request.action] if rule == "hold" else [],
+        resource_scope=["another document" if rule in {"scope", "deny"} else request.resource],
+        sensitive_resources=[],
+    )
+    with db.transaction() as session:
+        policies = policy_repository(session)
+        policy = policies.add_policy(r.Policy(owner_id=case.owner_id, name=str(uuid4()), agent_id=request.agent_id,
+                                             task_id=request.task_id, source_proposal_id=case.proposal_id))
+        version = policies.add_version(r.PolicyVersion(policy_id=policy.id, version=1,
+                                                       definition=definition.model_dump(mode="json")))
+        if rule != "draft":
+            now = datetime.now(timezone.utc)
+            policies.transition(version.id, PolicyStatus.PENDING_APPROVAL, now)
+            policies.transition(version.id, PolicyStatus.ACTIVE, now)
+        return policy.id
+
+
+@pytest.mark.parametrize(("scenario", "outcome", "reason"), [
+    ("allow", Outcome.ALLOW, Reason.CHECKS_PASSED),
+    ("deny", Outcome.BLOCK, Reason.EXPLICIT_DENIAL),
+    ("scope", Outcome.BLOCK, Reason.RESOURCE_OUT_OF_SCOPE),
+    ("draft", Outcome.BLOCK, Reason.NO_ACTIVE_POLICY),
+    ("hold", Outcome.HOLD, Reason.APPROVAL_REQUIRED),
+    ("missing_capability", Outcome.BLOCK, Reason.CAPABILITY_DENIED),
+    ("revoked_capability", Outcome.BLOCK, Reason.CAPABILITY_DENIED),
+    ("expired_session", Outcome.BLOCK, Reason.SESSION_EXPIRED),
+    ("revoked_session", Outcome.BLOCK, Reason.SESSION_REVOKED),
+    ("revoked_agent", Outcome.BLOCK, Reason.AGENT_INACTIVE),
+])
+def test_authorization_check(migrated: Database, authorization_case: AuthorizationCase,
+                             scenario: str, outcome: Outcome, reason: Reason) -> None:
+    case, request = authorization_case, authorization_case.request
+    policy_id = seed_authorization_policy(migrated, case, rule=scenario if scenario in {"scope", "draft"} else "allow")
+    if scenario in {"deny", "hold"}:
+        policy_id = seed_authorization_policy(migrated, case, rule=scenario)
+    with migrated.transaction() as session:
+        identity = AgentIdentityService(agent_repository(session), repository(session, r.User))
+        access = access_service(session, identity, JwtCredentialCodec(case.signing_key))
+        if scenario == "expired_session":
+            sessions = mutable_repository(session, r.AgentSession)
+            bound = access.get_bound_session(request.agent_id, request.session_id)
+            sessions.update(replace(bound, expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)))
+        elif scenario == "revoked_session":
+            access.revoke_session(case.owner_id, request.agent_id, request.session_id)
+        elif scenario == "revoked_agent":
+            identity.revoke(case.owner_id, request.agent_id)
+        elif scenario == "revoked_capability":
+            access.revoke_capability(case.owner_id, request.agent_id, request.session_id, case.capability_id)
+    url = migrated.engine.url.difference_update_query(["hostaddr"])
+    settings = Settings(env="testing", test_database_url=SecretStr(url.render_as_string(hide_password=False)),
+                        credential_signing_key=case.signing_key)
+    payload = {"request": request.model_dump(mode="json"),
+               "capability_id": None if scenario == "missing_capability" else str(case.capability_id)}
+    path = "/api/v1/authorization/check"
+    headers = {"Authorization": f"Bearer {case.token}"}
+    with TestClient(create_app(settings)) as client:
+        if scenario == "allow":
+            assert client.post(path, json=payload).status_code == 401
+            other = request.model_copy(update={"session_id": uuid4()}).model_dump(mode="json")
+            assert client.post(path, json={**payload, "request": other}, headers=headers).status_code == 401
+        response = client.post(path, json=payload, headers=headers)
+    assert response.status_code == 200
+    decision = Decision.model_validate(response.json())
+    assert (decision.request_id, decision.outcome, decision.reason) == (request.request_id, outcome, reason)
+    if scenario in {"allow", "deny", "scope", "hold"}:
+        assert decision.matched_policy is not None
+        assert (decision.matched_policy.policy_id, decision.matched_policy.version) == (policy_id, 1)
+    if scenario == "hold":
+        assert decision.required_approval is not None and decision.required_approval.reviewer_id == case.owner_id
+
+
+@pytest.mark.parametrize(("scenario", "reason"), [
+    ("allow", Reason.CHECKS_PASSED), ("hold", Reason.APPROVAL_REQUIRED), ("block", Reason.NO_ACTIVE_POLICY),
+    ("no_adapter", Reason.ADAPTER_UNAVAILABLE), ("recording_failed", Reason.CHECKS_PASSED),
+    ("policy_revoked", Reason.NO_ACTIVE_POLICY),
+    ("session_revoked", Reason.SESSION_REVOKED),
+])
+def test_enforcement_dispatch_and_revalidation(migrated: Database, authorization_case: AuthorizationCase,
+                                               scenario: str, reason: Reason) -> None:
+    case, request = authorization_case, authorization_case.request
+    rule = {"hold": "hold", "block": "draft"}.get(scenario, "allow")
+    policy_id = seed_authorization_policy(migrated, case, rule=rule)
+    codec = JwtCredentialCodec(case.signing_key)
+    decisions: list[Decision] = []
+    dispatched: list[ActionRequest] = []
+    checks = 0
+
+    @contextmanager
+    def transaction() -> Iterator[AuthorizationEngine]:
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            with migrated.transaction() as session:
+                identity = AgentIdentityService(agent_repository(session), repository(session, r.User))
+                if scenario == "policy_revoked":
+                    review = IntentReview(identity, repository(session, r.Task), repository(session, r.IntentInterpretation))
+                    PolicyManagement(identity, review, policy_repository(session)).revoke(case.owner_id, policy_id, 1)
+                elif scenario == "session_revoked":
+                    access_service(session, identity, codec).revoke_session(case.owner_id, request.agent_id, request.session_id)
+        with authorization_transaction(migrated, codec) as engine:
+            yield engine
+
+    adapters = {} if scenario == "no_adapter" else {(request.integration_type, request.action): dispatched.append}
+    def record(decision: Decision) -> None:
+        decisions.append(decision)
+        if scenario == "recording_failed":
+            raise RuntimeError("Recorder unavailable")
+
+    controller = EnforcementController(transaction, record, adapters)
+    if scenario == "recording_failed":
+        with pytest.raises(RuntimeError, match="Recorder unavailable"):
+            controller.enforce(request, case.token, case.capability_id)
+        assert checks == 2 and not dispatched
+        assert [decision.outcome for decision in decisions] == [Outcome.ALLOW]
+        return
+    result = controller.enforce(request, case.token, case.capability_id)
+    assert result.decision.reason == reason and decisions == [result.decision]
+    assert result.executed is (scenario == "allow")
+    assert dispatched == ([request] if scenario == "allow" else [])
+    if scenario in {"allow", "policy_revoked", "session_revoked"}:
+        assert checks == 2
 
 
 def test_testing_does_not_use_development_url(monkeypatch: pytest.MonkeyPatch) -> None:

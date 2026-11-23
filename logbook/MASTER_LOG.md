@@ -108,6 +108,14 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Issues encountered:** Hosted deployment and production owner authentication were not tested; the API uses the local owner bearer.
 - **Next task:** Stop at Prompt 07. Await authorization to implement deterministic RBAC/ABAC evaluation.
 
+## Prompt 08 — Authorization & Enforcement Engine
+
+- **Objective:** Centralize deterministic decisions and enforce them independently of integrations.
+- **Implemented:** Normalized action requests, ordered security checks, JWT-bound check endpoint, and synchronous adapter dispatch after fresh authorization under the agent lock.
+- **Verified:** 53 backend tests passed on disposable PostgreSQL 18.7, including migration round-trip and revocation between checks. Alembic found no schema drift.
+- **Remaining:** The controller requires an injected decision recorder. No production audit sink, action approval interface, browser/MCP adapter, or hosted rollout was added.
+- **Next task:** Stop at Prompt 08 and await further instructions.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

@@ -54,12 +54,6 @@ class AgentAccessService:
         if active:
             require_active(agent.status)
 
-    def _session(self, agent_id: UUID, session_id: UUID) -> AgentSession:
-        session = self._sessions.get(session_id)
-        if session is None or session.agent_id != agent_id:
-            raise AccessRecordNotFound("Session not found")
-        return session
-
     @staticmethod
     def _require_session(session: AgentSession, now: datetime) -> None:
         if session_status(session, now) != "active":
@@ -73,7 +67,7 @@ class AgentAccessService:
 
     def get_session(self, owner_id: UUID, agent_id: UUID, session_id: UUID) -> AgentSession:
         self._owned_agent(owner_id, agent_id)
-        return self._session(agent_id, session_id)
+        return self.get_bound_session(agent_id, session_id)
 
     def revoke_session(self, owner_id: UUID, agent_id: UUID, session_id: UUID) -> AgentSession:
         session = self.get_session(owner_id, agent_id, session_id)
@@ -83,7 +77,7 @@ class AgentAccessService:
 
     def issue_credential(self, owner_id: UUID, agent_id: UUID, session_id: UUID) -> tuple[Credential, str]:
         self._owned_agent(owner_id, agent_id, active=True)
-        session = self._session(agent_id, session_id)
+        session = self.get_bound_session(agent_id, session_id)
         now = self._clock()
         self._require_session(session, now)
         expires = int(min(session.expires_at, now + timedelta(seconds=CREDENTIAL_SECONDS)).timestamp())
@@ -118,7 +112,7 @@ class AgentAccessService:
         if not 1 <= ttl_seconds <= MAX_SESSION_SECONDS or not action.strip() or not resource.strip():
             raise ValueError("Invalid capability scope or lifetime")
         self._owned_agent(owner_id, agent_id, active=True)
-        session = self._session(agent_id, session_id)
+        session = self.get_bound_session(agent_id, session_id)
         if self._task(agent_id, task_id).status != "pending":
             raise CapabilityDenied("Task is not pending")
         now = self._clock()
@@ -141,30 +135,49 @@ class AgentAccessService:
         task_id: UUID, action: str, resource: str,
     ) -> None:
         """Validate prerequisites; this does not authorize or execute the operation."""
-        claims = self._codec.decode(token)
-        if (claims.agent_id, claims.session_id) != (agent_id, session_id):
-            raise InvalidCredential("Credential binding mismatch")
+        claims = self.decode_bound_credential(token, agent_id, session_id)
         try:
             agent = self._identity.validate_active(agent_id, for_update=True)
             self._identity.require_active_owner(agent.owner_id)
-            session = self._session(agent_id, session_id)
-            entry = self._credentials.get(claims.credential_id)
             now = self._clock()
-            self._require_session(session, now)
+            self._require_session(self.get_bound_session(agent_id, session_id), now)
         except (AgentNotFound, OwnerNotAuthorized, InvalidAgentStatus, AccessRecordNotFound, InvalidSession):
             raise InvalidCredential("Agent or session is not active") from None
+        self.require_current_credential(claims, now)
+        self.require_capability(agent_id, session_id, capability_id, task_id, action, resource, self._clock())
+
+    def get_bound_session(self, agent_id: UUID, session_id: UUID) -> AgentSession:
+        session = self._sessions.get(session_id)
+        if session is None or session.agent_id != agent_id:
+            raise AccessRecordNotFound("Session not found")
+        return session
+
+    def decode_bound_credential(self, token: str, agent_id: UUID, session_id: UUID) -> CredentialClaims:
+        claims = self._codec.decode(token)
+        if (claims.agent_id, claims.session_id) != (agent_id, session_id):
+            raise InvalidCredential("Credential binding mismatch")
+        return claims
+
+    def require_current_credential(self, claims: CredentialClaims, now: datetime) -> None:
+        entry = self._credentials.get(claims.credential_id)
         if (
-            entry is None or (entry.agent_id, entry.session_id) != (agent_id, session_id)
+            entry is None or (entry.agent_id, entry.session_id) != (claims.agent_id, claims.session_id)
             or entry.revoked_at is not None or entry.expires_at is None or entry.expires_at <= now
             or claims.expires_at != entry.expires_at.timestamp()
         ):
             raise InvalidCredential("Credential is not active")
 
+    def require_capability(
+        self, agent_id: UUID, session_id: UUID, capability_id: UUID | None, task_id: UUID | None,
+        action: str, resource: str, now: datetime,
+    ) -> None:
+        if task_id is None:
+            raise CapabilityDenied("A task-bound capability is required")
         capability = self._capabilities.get(capability_id) if capability_id is not None else None
         if (
             capability is None or (capability.agent_id, capability.session_id, capability.task_id)
             != (agent_id, session_id, task_id) or (capability.action, capability.resource) != (action, resource)
-            or capability.revoked_at is not None or capability.expires_at is None or capability.expires_at <= self._clock()
+            or capability.revoked_at is not None or capability.expires_at is None or capability.expires_at <= now
         ):
             raise CapabilityDenied("Capability does not cover this operation")
         try:
