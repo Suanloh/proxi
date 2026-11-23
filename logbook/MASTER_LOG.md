@@ -97,6 +97,17 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Issues encountered:** Live DeepSeek and hosted PostgreSQL were not tested.
 - **Next task:** Stop at Prompt 06. Policy evaluation and enforcement were not implemented.
 
+## Prompt 07 — Policy Management Engine
+
+- **Date:** 2026-11-23.
+- **Objective:** Store owner-approved security policies independently of the intent model.
+- **Implementation summary:** Added [policy management](../backend/app/svcs/policies.py), [lifecycle validation](../backend/app/core/policies/lifecycle.py), [request and response schemas](../backend/app/schs/policies.py), and [owner endpoints](../backend/app/api/policies.py). [Revision 0005](../backend/migrations/versions/0005_policy_management.py) stores fixed scope and version snapshots.
+- **Files modified:** Application wiring, record and repository contracts, SQLAlchemy mappings and adapter, tests, API/database/security docs, and logbook.
+- **Tests executed:** All 36 backend tests passed on disposable PostgreSQL 18.7. Migration round-trip passed; Alembic reported no drift. See [verification](TEST_LOG.md#prompt-07).
+- **Result:** Owned validated proposals convert deterministically to drafts. Explicit version approval activates policy; replacement and revocation preserve history. This does not authorize operations.
+- **Issues encountered:** Hosted deployment and production owner authentication were not tested; the API uses the local owner bearer.
+- **Next task:** Stop at Prompt 07. Await authorization to implement deterministic RBAC/ABAC evaluation.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

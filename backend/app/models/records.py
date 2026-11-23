@@ -95,6 +95,9 @@ class Policy(Record):
     owner_id: UUID
     name: str
     status: str = "active"
+    source_proposal_id: UUID | None = None
+    task_id: UUID | None = None
+    agent_id: UUID | None = None
 
 
 @dataclass(kw_only=True)
@@ -103,6 +106,9 @@ class PolicyVersion(Record):
     version: int
     status: str = "draft"
     superseded_at: datetime | None = None
+    definition: dict[str, object] | None = None
+    approved_at: datetime | None = None
+    revoked_at: datetime | None = None
 
 
 @dataclass(kw_only=True)

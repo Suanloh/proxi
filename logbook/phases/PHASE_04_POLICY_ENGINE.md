@@ -1,25 +1,19 @@
 # Phase 04 — Policy Engine
 
-**Status:** NOT STARTED
-
-This is a documentation checkpoint, not a numbered implementation prompt.
+**Status:** IN PROGRESS — Prompt 07 complete; evaluation and enforcement not started.
 
 ## Scope
 
-Evaluate deterministic policy and coordinate ALLOW, HOLD and BLOCK outcomes.
+Manage policy definitions and their approval lifecycle. In a later prompt, evaluate deterministic policy for ALLOW, HOLD and BLOCK outcomes.
 
 ## Implementation record
 
-Policy, authorization, enforcement and approval packages are placeholders. No protected execution path exists.
-
-## Dependencies and blockers
-
-Review identity and capability contracts before implementing their policy checks. Advisory signals cannot override a hard deny.
+[Policy management](../../docs/API.md#policy-management) converts a stored validated proposal into a draft without calling the model. Only the owner can approve a pending version. Revisions retain historical definitions, and replacement approval atomically supersedes the prior active version. Revocation never restores an older version. No protected execution path exists.
 
 ## Verification
 
-NOT RUN. Verify hard-deny precedence, that HOLD does not execute, and that approval requires revalidation.
+All 36 backend tests passed on disposable PostgreSQL 18.7, including owner isolation, state transitions, deterministic conversion, persisted history, and migration round-trip. Alembic reported no schema drift. See [Prompt 07 verification](../TEST_LOG.md#prompt-07).
 
 ## Next handoff
 
-Use the [master security invariants](../../PROXI_MASTER_PROMPT.md#security-invariants) to check the authorized policy scope. See [current status](../CURRENT_STATUS.md) for the active handoff; wait for explicit authorization.
+Stop after Prompt 07. Wait for explicit authorization to implement RBAC/ABAC evaluation. Review the [security invariants](../../PROXI_MASTER_PROMPT.md#security-invariants), bind trusted context at evaluation, and keep policy approval separate from action approval.
