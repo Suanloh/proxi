@@ -72,3 +72,9 @@ The enforcement controller persists a `HOLD` and returns an approval ID equal to
 | `POST /api/v1/approvals/{approval_id}/cancel` | Cancel a pending request. |
 
 A request starts `PENDING` and can become `APPROVED`, `REJECTED`, or `CANCELLED`. Unconsumed pending and approved requests become `EXPIRED` after five minutes; the original review is still visible in history. Repeating the same current decision returns it unchanged; conflicting or expired reviews return `409`. Unknown or out-of-scope IDs return `404`. To execute after approval, resubmit the exact action through the enforcement controller. The claim timestamp records use of the approval, not execution success.
+
+## Trust review
+
+`POST /api/v1/agents/{agent_id}/trust/review` requires the local owner bearer and has no request body. After the configured cooldown, an active owner can move an active owned agent up one band: suspended to restricted, or restricted to enhanced monitoring. The endpoint returns `204` without a body, `403` for an inactive owner, `404` for an unknown or unowned agent, and `409` for an inactive agent, ineligible band, or unelapsed cooldown. It cannot reactivate an agent, grant capabilities, change policy, or satisfy action approval.
+
+The authorization check can return `BLOCK` with `reason: "trust_restricted"` for an otherwise eligible request. The enforcement controller can also apply behavior signals during final revalidation, so a preview `ALLOW` is not a dispatch guarantee.

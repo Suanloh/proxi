@@ -219,18 +219,38 @@ class ApprovalRecordRow(Row):
 
 class BehaviourEventRow(Row):
     __tablename__ = "behaviour_events"
-    __table_args__ = (Index("ix_behaviour_events_agent_time", "agent_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_behaviour_events_agent_time", "agent_id", "created_at"),
+        Index("ix_behaviour_events_agent_reason_observed", "agent_id", "reason_code", "observed_at"),
+        Index("ix_behaviour_events_scope_type_observed", "agent_id", "session_id", "task_id", "event_type",
+              "observed_at"),
+        Index("ix_behaviour_events_agent_request", "agent_id", "request_id"),
+    )
 
     agent_id: Mapped[UUID] = mapped_column(ref("agents"))
     event_type: Mapped[str]
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    request_id: Mapped[UUID | None]
+    session_id: Mapped[UUID | None]
+    task_id: Mapped[UUID | None]
+    action: Mapped[str | None]
+    reason_code: Mapped[str | None]
+    band: Mapped[str | None]
+    reviewer_id: Mapped[UUID | None] = mapped_column(ref("users"))
 
 
 class TrustScoreRow(Row):
     __tablename__ = "trust_scores"
-    __table_args__ = (CheckConstraint("score BETWEEN 0 AND 100", name="score"),)
+    __table_args__ = (
+        CheckConstraint("score BETWEEN 0 AND 100", name="score"),
+        CheckConstraint("compliant_count >= 0", name="compliant_count"),
+    )
 
     agent_id: Mapped[UUID] = mapped_column(ref("agents"), unique=True)
     score: Mapped[int]
+    compliant_count: Mapped[int] = mapped_column(server_default="0")
+    last_adjusted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_violation_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TrustEventRow(Row):
@@ -240,6 +260,10 @@ class TrustEventRow(Row):
     agent_id: Mapped[UUID] = mapped_column(ref("agents"))
     delta: Mapped[int]
     reason_code: Mapped[str]
+    behaviour_event_id: Mapped[UUID | None] = mapped_column(ref("behaviour_events"), unique=True)
+    previous_score: Mapped[int | None]
+    new_score: Mapped[int | None]
+    rule: Mapped[str | None]
 
 
 class AuditLogRow(Row):

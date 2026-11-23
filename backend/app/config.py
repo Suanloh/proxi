@@ -6,6 +6,8 @@ from uuid import UUID
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .core.trust.rules import TrustRules
+
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -25,6 +27,7 @@ class Settings(BaseSettings):
     deepseek_api_key: Annotated[SecretStr, Field(min_length=1)] | None = None
     deepseek_model: Annotated[str, Field(max_length=100, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")] = "deepseek-flash"
     deepseek_timeout_seconds: Annotated[float, Field(gt=0, le=120)] = 20.0
+    trust_rules: TrustRules = Field(default_factory=TrustRules)
 
     @field_validator("credential_signing_key")
     @classmethod

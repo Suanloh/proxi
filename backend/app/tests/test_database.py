@@ -14,18 +14,21 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import delete, inspect, text
+from sqlalchemy import delete, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.config import Settings, load_settings
+from app.core.behaviour.rules import Rule
 from app.core.identity.lifecycle import InvalidAgentStatus
+from app.core.trust.rules import Band, TrustRules, Weights
 from app.core.policies.lifecycle import PolicyStatus
 from app.core.repositories import AgentConflict
 from app.infra.creds.jwt import JwtCredentialCodec
 from app.infra.db.database import Database, database_url
-from app.infra.db.models import AgentRow
+from app.infra.db.models import AgentRow, BehaviourEventRow, TrustEventRow
 from app.infra.llm.deepseek import DeepSeekAdapter
 from app.infra.repos.sqlalchemy import agent_repository, mutable_repository, policy_repository, repository
+from app.infra.repos.trust import SqlTrustHistory
 from app.main import access_service, authorization_transaction, create_app
 from app.models import records as r
 from app.schs.authz import ActionRequest, Decision, Outcome, Reason
@@ -36,6 +39,7 @@ from app.svcs.enforcement import EnforcementController, EnforcementResult
 from app.svcs.identity import AgentIdentityService, AgentNotFound
 from app.svcs.intent import IntentFailure, IntentFailureCode, IntentReview
 from app.svcs.policies import PolicyManagement
+from app.svcs.trust import DynamicTrust
 
 
 @pytest.fixture
@@ -91,7 +95,7 @@ def test_migration_round_trip(database: Database) -> None:
     assert set(inspect(database.engine).get_table_names(schema="proxi")) <= {"alembic_version"}
     migrate(database, "upgrade", "head")
     with database.engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM proxi.alembic_version")) == "0006"
+        assert connection.scalar(text("SELECT version_num FROM proxi.alembic_version")) == "0007"
 
 
 def test_repositories_round_trip_all_records(migrated: Database) -> None:
@@ -657,6 +661,158 @@ def seed_authorization_policy(db: Database, case: AuthorizationCase, *, rule: st
             policies.transition(version.id, PolicyStatus.PENDING_APPROVAL, now)
             policies.transition(version.id, PolicyStatus.ACTIVE, now)
         return policy.id
+
+
+def test_trust_enforcement_and_owner_review(migrated: Database, authorization_case: AuthorizationCase) -> None:
+    case, request = authorization_case, authorization_case.request
+    seed_authorization_policy(migrated, case, rule="allow")
+    rules = TrustRules(initial_score=100, denied_threshold=2, recovery_cooldown_seconds=10,
+                       weights=Weights(permission_boundary_violation=-40, repeated_denied_action=-90))
+    codec = JwtCredentialCodec(case.signing_key)
+    dispatched: list[ActionRequest] = []
+    controller = EnforcementController(lambda: authorization_transaction(migrated, codec, rules), lambda _: None,
+                                       {(request.integration_type, request.action): dispatched.append})
+
+    assert controller.enforce(request, "invalid", None).decision.reason == Reason.CREDENTIAL_INVALID
+    assert controller.enforce(request, case.token, None).decision.reason == Reason.CAPABILITY_DENIED
+    assert controller.enforce(request, case.token, None).decision.reason == Reason.CAPABILITY_DENIED
+    assert controller.enforce(request, case.token, None).decision.reason == Reason.CAPABILITY_DENIED
+    assert controller.enforce(request, case.token, case.capability_id).decision.reason == Reason.TRUST_RESTRICTED
+    assert not dispatched
+    with migrated.transaction() as session:
+        rows = session.execute(select(TrustEventRow, BehaviourEventRow).join(
+            BehaviourEventRow, TrustEventRow.behaviour_event_id == BehaviourEventRow.id,
+        ).order_by(TrustEventRow.previous_score.desc())).all()
+        assert [(event.previous_score, event.new_score, event.delta, event.rule) for event, _ in rows] == [
+            (100, 60, -40, Rule.BOUNDARY), (60, 0, -60, Rule.REPEATED_DENIED),
+        ]
+        for event, evidence in rows:
+            assert event.created_at and evidence.observed_at
+            assert event.reason_code == evidence.reason_code == Reason.CAPABILITY_DENIED
+            assert evidence.request_id == request.request_id and evidence.session_id == request.session_id
+        assert len(session.scalars(select(BehaviourEventRow)).all()) == 4
+
+    owner_token = token_hex(32)
+    url = migrated.engine.url.difference_update_query(["hostaddr"])
+    settings = Settings(env="testing", test_database_url=SecretStr(url.render_as_string(hide_password=False)),
+                        credential_signing_key=case.signing_key, dev_identity_owner_id=case.owner_id,
+                        dev_identity_token=SecretStr(owner_token), trust_rules=rules)
+    path = f"/api/v1/agents/{request.agent_id}/trust/review"
+    with TestClient(create_app(settings)) as client:
+        assert client.post(path, headers={"Authorization": f"Bearer {case.token}"}).status_code == 401
+        headers = {"Authorization": f"Bearer {owner_token}"}
+        assert client.post(path, headers=headers).status_code == 409
+        with migrated.transaction() as session:
+            history = SqlTrustHistory(session)
+            score = history.score(request.agent_id)
+            assert score is not None
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            history.save(replace(score, last_adjusted_at=past, last_violation_at=past))
+        assert client.post(path, headers=headers).status_code == 204
+        assert client.post(path, headers=headers).status_code == 409
+    with migrated.transaction() as session:
+        reviewed = session.execute(select(TrustEventRow, BehaviourEventRow).join(
+            BehaviourEventRow, TrustEventRow.behaviour_event_id == BehaviourEventRow.id,
+        ).where(TrustEventRow.rule == Rule.REVIEW)).one()
+        assert (reviewed[0].previous_score, reviewed[0].new_score, reviewed[1].reviewer_id) == (0, 20, case.owner_id)
+
+    scoped = rules.model_copy(update={"restricted_actions": (request.action,)})
+    allowed = EnforcementController(lambda: authorization_transaction(migrated, codec, scoped), lambda _: None,
+                                    {(request.integration_type, request.action): dispatched.append})
+    assert allowed.enforce(request, case.token, case.capability_id).executed
+    assert dispatched == [request]
+    seed_authorization_policy(migrated, case, rule="deny")
+    assert allowed.enforce(request, case.token, case.capability_id).decision.reason == Reason.EXPLICIT_DENIAL
+    assert dispatched == [request]
+
+
+def test_trust_recovery_uses_distinct_clean_executions(migrated: Database, authorization_case: AuthorizationCase) -> None:
+    request = authorization_case.request
+    now = datetime.now(timezone.utc)
+    rules = TrustRules(initial_score=99, denied_threshold=2, repeat_window_seconds=5,
+                       recovery_successes=2, recovery_cooldown_seconds=10)
+    with migrated.transaction() as session:
+        agent_repository(session).get_for_update(request.agent_id)
+        history = SqlTrustHistory(session)
+        trust = DynamicTrust(history, repository(session, r.IntentInterpretation), rules, clock=lambda: now)
+        trust.blocked(request, Reason.ACTION_NOT_GRANTED)
+        now += timedelta(seconds=6)
+        trust.blocked(request, Reason.ACTION_NOT_GRANTED)
+        score = history.score(request.agent_id)
+        assert score is not None and score.score == 89  # The earlier denial fell outside the repeat window.
+        first = request.model_copy(update={"request_id": uuid4()})
+        trust.execution(first, succeeded=True)
+        now += timedelta(seconds=10)
+        trust.execution(first, succeeded=True)
+        score = history.score(request.agent_id)
+        assert score is not None and (score.score, score.compliant_count) == (89, 1)
+        trust.execution(request.model_copy(update={"request_id": uuid4()}), succeeded=False)
+        score = history.score(request.agent_id)
+        assert score is not None and score.compliant_count == 0
+        for _ in range(2):
+            trust.execution(request.model_copy(update={"request_id": uuid4()}), succeeded=True)
+        score = history.score(request.agent_id)
+        assert score is not None and (score.score, score.compliant_count) == (94, 0)
+        now += timedelta(seconds=10)
+        for _ in range(4):
+            trust.execution(request.model_copy(update={"request_id": uuid4()}), succeeded=True)
+        score = history.score(request.agent_id)
+        assert score is not None and score.score == 99
+        now += timedelta(seconds=10)
+        trust.execution(request.model_copy(update={"request_id": uuid4()}), succeeded=True)
+        score = history.score(request.agent_id)
+        assert score is not None and score.score == 100
+
+
+def test_trust_inspects_intent_and_sequence_before_dispatch(migrated: Database,
+                                                            authorization_case: AuthorizationCase) -> None:
+    case, request = authorization_case, authorization_case.request
+    seed_authorization_policy(migrated, case)
+    original = IntentInterpretation(task_objective="Read another document", task_description="Read another document",
+                                    allowed_actions=[request.action], prohibited_actions=[], approval_required_actions=[],
+                                    resource_scope=["another document"], sensitive_resources=[], risk_indicators=[],
+                                    interpretation_explanation="Read only")
+    proposal = IntentProposal(interpretation=original, proposed_permissions=original.permissions())
+    with migrated.transaction() as session:
+        intents = mutable_repository(session, r.IntentInterpretation)
+        stored = intents.get(case.proposal_id)
+        assert stored is not None
+        intents.update(replace(stored, status="proposed", proposal=proposal.model_dump(mode="json")))
+
+    codec = JwtCredentialCodec(case.signing_key)
+    rules = TrustRules(initial_score=54, predecessors={request.action: ("file.open",)})
+    dispatched: list[ActionRequest] = []
+    controller = EnforcementController(lambda: authorization_transaction(migrated, codec, rules), lambda _: None,
+                                       {(request.integration_type, request.action): dispatched.append})
+    result = controller.enforce(request, case.token, case.capability_id)
+    assert not result.executed and not dispatched and result.decision.reason == Reason.TRUST_RESTRICTED
+    with migrated.transaction() as session:
+        events = session.scalars(select(BehaviourEventRow.event_type)).all()
+        assert set(events) == {Rule.UNUSUAL, Rule.SEQUENCE, Rule.TRUST_BLOCK}
+        score = SqlTrustHistory(session).score(request.agent_id)
+        assert score is not None and score.score == 44
+
+
+def test_trust_counts_new_approval_holds_not_retries(migrated: Database, authorization_case: AuthorizationCase) -> None:
+    case, request = authorization_case, authorization_case.request
+    seed_authorization_policy(migrated, case, rule="hold")
+    rules = TrustRules(approval_threshold=2)
+    codec = JwtCredentialCodec(case.signing_key)
+    controller = EnforcementController(lambda: authorization_transaction(migrated, codec, rules), lambda _: None, {})
+    for action in (request, request, request.model_copy(update={"request_id": uuid4()})):
+        assert controller.enforce(action, case.token, case.capability_id).decision.outcome == Outcome.HOLD
+    with migrated.transaction() as session:
+        events = session.scalars(select(BehaviourEventRow.event_type)).all()
+        assert sorted(events) == sorted([Rule.APPROVAL, Rule.REPEATED_APPROVAL])
+        score = SqlTrustHistory(session).score(request.agent_id)
+        assert score is not None and score.score == 95
+
+
+@pytest.mark.parametrize(("score", "band"), [(0, Band.SUSPENDED), (24, Band.SUSPENDED), (25, Band.RESTRICTED),
+                                           (59, Band.RESTRICTED), (60, Band.MONITORED), (84, Band.MONITORED),
+                                           (85, Band.NORMAL), (100, Band.NORMAL)])
+def test_configured_trust_band_boundaries(score: int, band: Band) -> None:
+    assert TrustRules(restricted_min=25, monitored_min=60, normal_min=85).band(score) is band
 
 
 @pytest.mark.parametrize(("scenario", "outcome", "reason"), [

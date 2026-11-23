@@ -24,11 +24,26 @@ The engine evaluates, in order:
 6. Integration role (the registered agent type), action grant, and attribute conditions (exact capability IDs and type-strict trusted context). Client parameters cannot supply trusted context.
 7. Configured trust restrictions, then action approval. Any scoped policy whose conditions match can require `HOLD` for an approval-required action or sensitive resource, even when another policy grants the action. Only a request passing these checks receives `ALLOW`.
 
-The first failing check determines the reason. Policy ID order breaks ties for decision attribution, not for permission precedence. No trust scoring is implemented.
+The first failing check determines the reason. Policy ID order breaks ties for decision attribution, not for permission precedence. Trust can add restrictions but cannot bypass a denial or satisfy an approval.
 
 The controller accepts only explicitly registered integration/action adapters. Before synchronous dispatch it evaluates again in a fresh transaction, calls the required decision recorder, and holds the agent row lock through dispatch. Agent, session, credential, capability, and policy lifecycle mutations share that lock; policy mutations that change active authority take it before the policy lock. The recorder must be synchronous, must not re-enter these mutations, and must not log credentials or raw parameters. If recording fails, dispatch does not start. The controller accepts an injected recorder; no production audit sink is wired yet.
 
 Adapters must execute the exact authorized action and resource, validate action-specific parameters, and finish without scheduling deferred work. A `HOLD`, `BLOCK`, or missing adapter does not dispatch. No browser or MCP executor is registered, and the [check endpoint](API.md#authorization-check) never dispatches.
+
+### Behaviour analysis and dynamic trust
+
+Configure the engine with the `PROXI_TRUST_RULES` JSON environment variable. It accepts `initial_score`, `normal_min`, `monitored_min`, `restricted_min`, `restricted_actions`, `predecessors`, `repeat_window_seconds`, `denied_threshold`, `approval_threshold`, `recovery_successes`, `recovery_cooldown_seconds`, and per-rule `weights`. Band minima must strictly increase and scores stay within 0–100.
+
+| Default score | Enforcement |
+| --- | --- |
+| 80–100 | Normal scoped operation |
+| 50–79 | Enhanced monitoring; no additional access restrictions |
+| 20–49 | Only actions in `restricted_actions`, subject to all other gates; empty by default |
+| 0–19 | Dispatch blocked pending owner review |
+
+The engine compares verified requests against deterministic authorization outcomes, exact action/resource pairs in usable policy-linked proposals, and configured predecessors from the same session and task. Proposals are advisory; missing or unusable proposals do not trigger an intent deviation. It records attributable denials, new approval holds, session anomalies, and execution outcomes. It does not call an LLM or claim to detect all attacks. Invalid credentials cannot penalize another agent; attributable inactive-session events and trust-only denials are audit-only.
+
+Normal operations add 0 points. Defaults subtract 5 for unusual actions, 15 for out-of-scope resources or permission-boundary violations, and 25 for repeated denials instead of stacking the base penalty. Three denials or three separate approval holds within 300 seconds trigger their respective repeat rules. Recovery adds 5 only after at least five distinct successful compliant operations and a 300-second cooldown since the latest violation or adjustment. Review restores at most one band and does not change agent lifecycle or grant access. Each effective score change links to a persisted behaviour event.
 
 ### Human approval
 

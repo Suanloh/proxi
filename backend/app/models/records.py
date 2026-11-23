@@ -156,12 +156,23 @@ class ApprovalRecord(Record):
 class BehaviourEvent(Record):
     agent_id: UUID
     event_type: str
+    observed_at: datetime | None = None
+    request_id: UUID | None = None
+    session_id: UUID | None = None
+    task_id: UUID | None = None
+    action: str | None = None
+    reason_code: str | None = None
+    band: str | None = None
+    reviewer_id: UUID | None = None
 
 
 @dataclass(kw_only=True)
 class TrustScore(Record):
     agent_id: UUID
     score: int
+    compliant_count: int = 0
+    last_adjusted_at: datetime | None = None
+    last_violation_at: datetime | None = None
 
 
 @dataclass(kw_only=True)
@@ -169,6 +180,10 @@ class TrustEvent(Record):
     agent_id: UUID
     delta: int
     reason_code: str
+    behaviour_event_id: UUID | None = None
+    previous_score: int | None = None
+    new_score: int | None = None
+    rule: str | None = None
 
 
 @dataclass(kw_only=True)

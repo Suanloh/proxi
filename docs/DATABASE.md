@@ -39,6 +39,7 @@ erDiagram
     AGENT ||--o{ BEHAVIOUR_EVENT : emits
     AGENT ||--o| TRUST_SCORE : has
     AGENT ||--o{ TRUST_EVENT : has
+    BEHAVIOUR_EVENT o|--o| TRUST_EVENT : explains
     AGENT o|--o{ AUDIT_LOG : relates_to
     AGENT o|--o{ SECURITY_EVENT : relates_to
     AGENT ||--o{ INTEGRATION_CONNECTION : uses
@@ -53,4 +54,5 @@ erDiagram
 - Revision `0004` adds optional JSONB `proposal` and `failure_code` to intent interpretations, preserving legacy rows. New successful interpretations store a proposal; failed interpretations store only a failure code and no proposal. A new intent attempt and its task are persisted together. Downgrading drops the proposal and failure details and maps `failed` interpretations to `rejected`.
 - Revision `0005` binds managed policies to their source proposal, task, and agent with restrictive foreign keys. JSONB definitions are immutable snapshots through the management repository. Version transitions update only lifecycle metadata under a lock on the policy row. PostgreSQL permits at most one active version and one outstanding managed draft or pending approval per policy. Legacy unbound policies are retained but excluded from management and approved-active selection. Downgrading drops managed scope, definitions and approval/revocation metadata; previously active managed versions, pending versions, and revoked versions become non-active drafts.
 - Revision `0006` binds managed approvals to the reviewer and stores the immutable action, capability, and policy gate snapshot as JSONB. It records single-use consumption separately from the human review; cancellation is a review outcome. Expiration is derived from the deadline rather than overwriting review history. Legacy unbound approvals cannot authorize dispatch. Downgrade removes the new bindings and claim time and maps cancelled reviews to rejected.
+- Revision `0007` adds behaviour rule, reason, and observation time, plus scoped lookup indexes. It tracks recovery streaks on the per-agent score and links each new effective adjustment to one behaviour event. The adjustment stores old and new scores, rule, reason, and creation time. Legacy history is retained with nullable new linkage fields. Downgrade drops the new fields and indexes.
 - Audit logs and other historical records expose no update or delete through their repositories. Restrictive foreign keys prevent parent deletion from cascading into audit history. Direct writes by privileged roles remain possible. Credential records hold references, not secret material.

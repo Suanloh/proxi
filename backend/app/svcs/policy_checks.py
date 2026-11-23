@@ -13,6 +13,7 @@ from ..schs.policies import PolicyDefinition
 class ApplicablePolicy:
     match: PolicyMatch
     definition: PolicyDefinition
+    source_proposal_id: UUID
 
 
 class PolicyRetrieval:
@@ -36,7 +37,8 @@ class PolicyRetrieval:
                         or (conditions.expires_at is not None and now >= conditions.expires_at)):
                     continue
                 result.append(ApplicablePolicy(
-                    PolicyMatch(policy_id=policy.id, version=version.version, version_id=version.id), definition,
+                    PolicyMatch(policy_id=policy.id, version=version.version, version_id=version.id),
+                    definition, policy.source_proposal_id,
                 ))
         return result
 

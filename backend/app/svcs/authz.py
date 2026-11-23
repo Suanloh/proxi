@@ -11,6 +11,7 @@ from ..schs.authz import ActionRequest, ApprovalInfo, ContextAttributes, Decisio
 from .access import AccessRecordNotFound, AgentAccessService, CapabilityDenied, session_status
 from .approvals import ActionApprovals, ApprovalClaim
 from .identity import AgentIdentityService, AgentNotFound, OwnerNotAuthorized
+from .trust import DynamicTrust
 from .policy_checks import (
     ApplicablePolicy, PolicyRetrieval, action_granted, attributes_allow, needs_approval, resource_allows, role_allows,
 )
@@ -24,9 +25,10 @@ class AuthorizationEngine:
     def __init__(
         self, identity: AgentIdentityService, access: AgentAccessService, policies: PolicyRetrieval,
         trust: TrustRestriction | None = None, clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-        *, approvals: ActionApprovals | None = None,
+        *, approvals: ActionApprovals | None = None, behaviour: DynamicTrust | None = None,
     ) -> None:
         self.approvals = approvals
+        self.behaviour = behaviour
         self._identity = identity
         self._access = access
         self._policies = policies
@@ -36,8 +38,13 @@ class AuthorizationEngine:
     def evaluate(
         self, request: ActionRequest, token: str, capability_id: UUID | None,
         *, trusted_context: ContextAttributes | None = None, _claim: ApprovalClaim | None = None,
+        _dispatch: bool = False,
     ) -> Decision:
+        attributable = False
+
         def block(reason: Reason, policy: ApplicablePolicy | None = None) -> Decision:
+            if attributable and self.behaviour is not None:
+                self.behaviour.blocked(request, reason)
             return Decision(request_id=request.request_id, outcome=Outcome.BLOCK, reason=reason,
                             failed_checks=(reason,), matched_policy=policy.match if policy else None)
 
@@ -56,14 +63,21 @@ class AuthorizationEngine:
             return block(Reason.SESSION_INVALID)
         now = self._clock()
         status = session_status(session, now)
-        if status != "active":
-            return block(Reason.SESSION_REVOKED if status == "revoked" else Reason.SESSION_EXPIRED)
-
+        session_reason = None if status == "active" else (
+            Reason.SESSION_REVOKED if status == "revoked" else Reason.SESSION_EXPIRED
+        )
+        if session_reason is not None and self.behaviour is None:
+            return block(session_reason)
         try:
             claims = self._access.decode_bound_credential(token, agent.id, session.id)
             self._access.require_current_credential(claims, now)
         except InvalidCredential:
-            return block(Reason.CREDENTIAL_INVALID)
+            return block(session_reason or Reason.CREDENTIAL_INVALID)
+        if session_reason is not None:
+            if self.behaviour is not None:
+                self.behaviour.session_anomaly(request, session_reason)
+            return block(session_reason)
+        attributable = True
         if capability_id is None:
             return block(Reason.CAPABILITY_DENIED)
         try:
@@ -109,5 +123,9 @@ class AuthorizationEngine:
                 required_approval=ApprovalInfo(reviewer_id=agent.owner_id, action=request.action,
                                                resource=request.resource, policy_version_ids=versions),
             )
+        if _dispatch and self.behaviour is not None:
+            self.behaviour.inspect_grant(request, (policy.source_proposal_id for policy in grants))
+            if not self.behaviour.allows(request, context):
+                return block(Reason.TRUST_RESTRICTED, grants[0])
         return Decision(request_id=request.request_id, outcome=Outcome.ALLOW, reason=Reason.CHECKS_PASSED,
                         matched_policy=grants[0].match)

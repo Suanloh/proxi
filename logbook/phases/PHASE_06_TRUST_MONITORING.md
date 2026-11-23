@@ -1,25 +1,19 @@
 # Phase 06 — Trust Monitoring
 
-**Status:** NOT STARTED
-
-This is a documentation checkpoint, not a numbered implementation prompt.
+**Status:** COMPLETE (Prompt 10)
 
 ## Scope
 
-Record behavior signals and produce dynamic, rule-based trust assessments.
+Record behaviour signals and apply configurable, rule-based trust restrictions without granting access.
 
 ## Implementation record
 
-Behavior and trust packages are placeholders. No event-backed scoring or trust monitoring exists.
-
-## Dependencies and blockers
-
-Review available event and audit contracts when authorized. Trust cannot independently grant access.
+Deterministic findings cover authority and scope violations, intent and sequence deviations, repeated approval requests, session anomalies, and execution outcomes. Effective score changes link to persisted evidence. Enforcement revalidates trust before dispatch. Recovery requires sustained compliance and a cooldown, or limited owner review.
 
 ## Verification
 
-NOT RUN. Verify rule-based score changes and hard-deny precedence once both paths exist.
+The backend suite passed on disposable PostgreSQL, including hard-deny precedence and restrictive trust bands. See [Prompt 10 verification](../TEST_LOG.md#prompt-10).
 
 ## Next handoff
 
-Coordinate with [Database](PHASE_01_DATABASE.md) and [Policy Engine](PHASE_04_POLICY_ENGINE.md) checkpoints before implementation. See [current status](../CURRENT_STATUS.md) for the active handoff; wait for explicit authorization.
+No dashboard or production executor was added. See [current status](../CURRENT_STATUS.md).

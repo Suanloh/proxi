@@ -61,7 +61,9 @@ def details(entry: ApprovalEntry, now: datetime) -> ApprovalDetails:
 
 class ActionApprovals:
     def __init__(self, approvals: ApprovalRepository, identity: AgentIdentityService, policies: PolicyRetrieval,
-                 *, clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
+                 *, clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+                 on_created: Callable[[ActionRequest], None] | None = None) -> None:
+        self._on_created = on_created
         self._approvals = approvals
         self._identity = identity
         self._policies = policies
@@ -84,6 +86,8 @@ class ActionApprovals:
                                            reviewer_id=info.reviewer_id, expires_at=now + timedelta(minutes=5))
                 if not self._approvals.add(approval, persisted):
                     return invalid_approval(decision), None, None
+                if self._on_created is not None:
+                    self._on_created(request)
                 return decision, request.request_id, None
             approval, original, _ = entry
             if (approval.reviewer_id == info.reviewer_id and original.outcome == Outcome.HOLD

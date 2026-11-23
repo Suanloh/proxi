@@ -123,6 +123,12 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Verified:** 61 backend tests passed on disposable PostgreSQL 18.7. Migration round-trip passed and Alembic found no schema drift. See [Prompt 09 verification](TEST_LOG.md#prompt-09).
 - **Stop point:** No trust scoring, dashboard UI, production execution adapter, or hosted rollout.
 
+## Prompt 10 — Behaviour Analysis & Dynamic Trust Engine
+
+- **Implemented:** Deterministic behaviour analysis, persisted evidence, configurable scores and bands, authorization restrictions, and controlled recovery. See the [trust rules and enforcement](../docs/SECURITY.md#behaviour-analysis-and-dynamic-trust) and [revision 0007](../backend/migrations/versions/0007_dynamic_trust.py).
+- **Verified:** 73 backend tests passed on disposable PostgreSQL 18.7. Migration round-trip passed and Alembic detected no schema drift. See [Prompt 10 verification](TEST_LOG.md#prompt-10).
+- **Stop point:** No dashboard visualizations, hosted rollout, or production executor.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

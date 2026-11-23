@@ -61,9 +61,11 @@ class EnforcementController(Generic[T]):
 
         # Commit the claim first so a crash or an adapter failure cannot make it reusable.
         # Keep the agent lock through dispatch; revocations use the same lock.
+        failure: Exception | None = None
         with self._transaction() as engine:
             context = trusted_context() if trusted_context else None
-            decision = engine.evaluate(snapshot, token, capability_id, trusted_context=context, _claim=claim)
+            decision = engine.evaluate(snapshot, token, capability_id, trusted_context=context, _claim=claim,
+                                       _dispatch=True)
             if claim is None:
                 if engine.approvals is None:
                     raise RuntimeError("Enforcement requires an approval repository")
@@ -75,4 +77,15 @@ class EnforcementController(Generic[T]):
                 decision = invalid_approval(decision)
                 self._record(decision)
                 return EnforcementResult(decision, approval_id=approval_id)
-            return EnforcementResult(decision, executed=True, result=adapter(snapshot), approval_id=approval_id)
+            if engine.behaviour is not None:
+                engine.behaviour.authorized(snapshot)
+            result = None
+            try:
+                result = adapter(snapshot.model_copy(deep=True))
+            except Exception as exc:
+                failure = exc
+            if engine.behaviour is not None:
+                engine.behaviour.execution(snapshot, succeeded=failure is None)
+        if failure is not None:
+            raise failure
+        return EnforcementResult(decision, executed=True, result=result, approval_id=approval_id)

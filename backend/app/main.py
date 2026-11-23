@@ -14,13 +14,16 @@ from .api.health import router as health_router
 from .api.intent import create_intent_router
 from .api.owner_auth import create_owner_auth
 from .api.policies import create_policy_router
+from .api.trust import create_trust_router
 from .config import Settings, load_settings
 from .core.creds.tokens import CredentialCodec
+from .core.trust.rules import TrustRules
 from .infra.creds.jwt import JwtCredentialCodec
 from .infra.db.database import Database, database_url
 from .infra.llm.deepseek import DeepSeekAdapter
 from .infra.repos.approvals import approval_repository
 from .infra.repos.sqlalchemy import agent_repository, mutable_repository, policy_repository, repository
+from .infra.repos.trust import SqlTrustHistory
 from .logging_config import configure_logging
 from .models.records import AgentSession, Capability, Credential, IntentInterpretation, Task, User
 from .svcs.access import AgentAccessService
@@ -30,6 +33,7 @@ from .svcs.identity import AgentIdentityService
 from .svcs.intent import IntentInterpreter, IntentReview
 from .svcs.policies import PolicyManagement
 from .svcs.policy_checks import PolicyRetrieval
+from .svcs.trust import DynamicTrust
 
 logger = logging.getLogger("proxi.app")
 
@@ -41,13 +45,20 @@ def access_service(session: Session, identity: AgentIdentityService, codec: Cred
     )
 
 
+def trust_service(session: Session, rules: TrustRules) -> DynamicTrust:
+    return DynamicTrust(SqlTrustHistory(session), repository(session, IntentInterpretation), rules)
+
+
 @contextmanager
-def authorization_transaction(db: Database, codec: CredentialCodec) -> Iterator[AuthorizationEngine]:
+def authorization_transaction(db: Database, codec: CredentialCodec,
+                              rules: TrustRules | None = None) -> Iterator[AuthorizationEngine]:
     with db.transaction() as session:
         identity = AgentIdentityService(agent_repository(session), repository(session, User))
         policies = PolicyRetrieval(policy_repository(session))
+        trust = trust_service(session, rules if rules is not None else TrustRules())
+        approvals = ActionApprovals(approval_repository(session), identity, policies, on_created=trust.approval_created)
         yield AuthorizationEngine(identity, access_service(session, identity, codec), policies,
-                                  approvals=ActionApprovals(approval_repository(session), identity, policies))
+                                  trust=trust, behaviour=trust, approvals=approvals)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -91,7 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db: Database | None = request.app.state.database
         if db is None or codec is None:
             raise HTTPException(status_code=503)
-        with authorization_transaction(db, codec) as engine:
+        with authorization_transaction(db, codec, settings.trust_rules) as engine:
             yield engine
 
     @contextmanager
@@ -102,6 +113,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with db.transaction() as session:
             identity = AgentIdentityService(agent_repository(session), repository(session, User))
             yield ActionApprovals(approval_repository(session), identity, PolicyRetrieval(policy_repository(session)))
+
+    @contextmanager
+    def trust_transaction(request: Request) -> Iterator[tuple[DynamicTrust, AgentIdentityService]]:
+        db: Database | None = request.app.state.database
+        if db is None:
+            raise HTTPException(status_code=503)
+        with db.transaction() as session:
+            identity = AgentIdentityService(agent_repository(session), repository(session, User))
+            yield trust_service(session, settings.trust_rules), identity
 
     @contextmanager
     def intent_transaction(request: Request) -> Iterator[IntentReview]:
@@ -136,4 +156,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(create_intent_router(authenticate_owner, intent_transaction, interpreter), prefix="/api/v1")
     app.include_router(create_policy_router(authenticate_owner, policy_transaction), prefix="/api/v1")
     app.include_router(create_approval_router(authenticate_owner, approval_transaction), prefix="/api/v1")
+    app.include_router(create_trust_router(authenticate_owner, trust_transaction), prefix="/api/v1")
     return app

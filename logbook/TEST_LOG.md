@@ -94,6 +94,12 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 - **Schema:** Migration round-trip passed in the suite. `alembic upgrade head` and `alembic check` succeeded with revision `0006`; no new upgrade operations detected.
 - **Scope:** Tests used synchronous test adapters and the local owner bearer. No hosted database or production executor was tested.
 
+## Prompt 10
+
+- **Backend regression:** `pytest -xq` — 73 passed on disposable PostgreSQL 18.7. Coverage includes repeat escalation, evidence linkage, score limits and band boundaries, intent and sequence checks, approval retry deduplication, hard-deny precedence, restricted dispatch, and recovery.
+- **Schema:** Migration round-trip passed in the suite. `alembic upgrade head` and `alembic check` succeeded with revision `0007`; no schema drift detected.
+- **Scope:** Tests used synchronous test adapters and the local owner bearer. No hosted database or production executor was tested.
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |
