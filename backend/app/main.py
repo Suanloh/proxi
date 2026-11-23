@@ -10,16 +10,18 @@ from .api.errors import register_error_handlers
 from .api.health import router as health_router
 from .api.intent import create_intent_router
 from .api.owner_auth import create_owner_auth
+from .api.policies import create_policy_router
 from .config import Settings, load_settings
 from .infra.creds.jwt import JwtCredentialCodec
 from .infra.db.database import Database, database_url
 from .infra.llm.deepseek import DeepSeekAdapter
-from .infra.repos.sqlalchemy import agent_repository, mutable_repository, repository
+from .infra.repos.sqlalchemy import agent_repository, mutable_repository, policy_repository, repository
 from .logging_config import configure_logging
 from .models.records import AgentSession, Capability, Credential, IntentInterpretation, Task, User
 from .svcs.access import AgentAccessService
 from .svcs.identity import AgentIdentityService
 from .svcs.intent import IntentInterpreter, IntentReview
+from .svcs.policies import PolicyManagement
 
 logger = logging.getLogger("proxi.app")
 
@@ -74,6 +76,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 repository(session, Task), repository(session, IntentInterpretation),
             )
 
+    @contextmanager
+    def policy_transaction(request: Request) -> Iterator[PolicyManagement]:
+        db: Database | None = request.app.state.database
+        if db is None:
+            raise HTTPException(status_code=503)
+        with db.transaction() as session:
+            identity = AgentIdentityService(agent_repository(session), repository(session, User))
+            intents = IntentReview(identity, repository(session, Task), repository(session, IntentInterpretation))
+            yield PolicyManagement(identity, intents, policy_repository(session))
+
     interpreter = IntentInterpreter(DeepSeekAdapter(
         settings.deepseek_api_key, settings.deepseek_model, settings.deepseek_timeout_seconds,
     ))
@@ -83,4 +95,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(create_agents_router(authenticate_owner, identity_transaction), prefix="/api/v1")
     app.include_router(create_access_router(authenticate_owner, access_transaction), prefix="/api/v1")
     app.include_router(create_intent_router(authenticate_owner, intent_transaction, interpreter), prefix="/api/v1")
+    app.include_router(create_policy_router(authenticate_owner, policy_transaction), prefix="/api/v1")
     return app

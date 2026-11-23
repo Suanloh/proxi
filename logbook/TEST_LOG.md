@@ -74,6 +74,14 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 | P06-02 | Schema migration and drift | Revision `0004` round-trips and metadata matches the database | Round-trip passed in the test suite; Alembic detected no new upgrade operations | PASS | From `backend`: `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` on disposable PostgreSQL | None |
 | P06-03 | Live DeepSeek and hosted PostgreSQL | Verify external deployments separately | Neither service was contacted | NOT RUN | Local verification only | Verify during an authorized rollout |
 
+## Prompt 07
+
+| Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |
+| --- | --- | --- | --- | --- | --- | --- |
+| P07-01 | Policy lifecycle, versioning and backend regression | Create deterministic drafts; reject unauthorized operations and invalid transitions; preserve historical snapshots | 36 passed, including canonical conversion, explicit approval, replacement, revocation, expiry and owner isolation | PASS | From `backend`: `..\.venv\Scripts\python.exe -m pytest -q app\tests` with `PROXI_ENV=testing` and disposable loopback PostgreSQL 18.7 | None |
+| P07-02 | Migration round-trip and schema drift | Revision `0005` applies and mappings match the schema | Round-trip passed in the suite; Alembic detected no new upgrade operations | PASS | From `backend`: `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` | None |
+| P07-03 | Hosted rollout | Verify hosted migrations and endpoints | No hosted database accessed | NOT RUN | Local PostgreSQL only | Verify during an authorized rollout |
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

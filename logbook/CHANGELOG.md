@@ -56,6 +56,13 @@ Newest prompt first. Describe actual changes, not planned work. Record test outc
 
 - **Added:** [Master instructions](../PROXI_MASTER_PROMPT.md) covering architecture, security invariants and prompt workflow.
 
+## Prompt 07 — Policy Management Engine
+
+- **Added:** [Owner policy API](../docs/API.md#policy-management) for draft creation, review, explicit approval, revision history and revocation.
+- **Changed:** Revision `0005` persists policy scope, version definitions and lifecycle metadata while retaining legacy records.
+- **Security:** Provider output remains advisory, and only explicit owner approval of a pending version can activate it. No authorization pipeline was added.
+- **Testing:** 36 backend tests passed; Alembic reported no drift. See [verification](TEST_LOG.md#prompt-07).
+
 ## Entry template
 
 - **Added:** New capabilities or docs.

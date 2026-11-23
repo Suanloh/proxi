@@ -24,6 +24,7 @@ from app.infra.llm.deepseek import DeepSeekAdapter
 from app.infra.repos.sqlalchemy import agent_repository, mutable_repository, repository
 from app.main import create_app
 from app.models import records as r
+from app.schs.intent import IntentInterpretation, IntentProposal
 from app.svcs.identity import AgentIdentityService, AgentNotFound
 from app.svcs.intent import IntentFailure, IntentFailureCode
 
@@ -81,7 +82,7 @@ def test_migration_round_trip(database: Database) -> None:
     assert set(inspect(database.engine).get_table_names(schema="proxi")) <= {"alembic_version"}
     migrate(database, "upgrade", "head")
     with database.engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM proxi.alembic_version")) == "0004"
+        assert connection.scalar(text("SELECT version_num FROM proxi.alembic_version")) == "0005"
 
 
 def test_repositories_round_trip_all_records(migrated: Database) -> None:
@@ -475,6 +476,124 @@ def test_intent_api_persists_proposal_and_failure_without_changing_authority(
         assert repository(session, r.PolicyVersion).get(active.id) == active
         for table, count in (("policies", 1), ("policy_versions", 1), ("capabilities", 0), ("authorization_decisions", 0)):
             assert session.scalar(text(f"SELECT count(*) FROM proxi.{table}")) == count
+
+
+def test_policy_lifecycle_and_immutable_revisions(migrated: Database) -> None:
+    with migrated.transaction() as session:
+        users = repository(session, r.User)
+        owner = users.add(r.User(email="policy-owner@example.test"))
+        other = users.add(r.User(email="other-policy-owner@example.test"))
+        agents = agent_repository(session)
+        agent = agents.add(r.Agent(owner_id=owner.id, name="Browser"))
+        sibling = agents.add(r.Agent(owner_id=owner.id, name="Other browser"))
+        task = repository(session, r.Task).add(r.Task(agent_id=agent.id, objective="Review public documents"))
+        intent = IntentInterpretation(
+            task_objective="Review documents", task_description=task.objective,
+            allowed_actions=["browser.read", "browser.navigate"], prohibited_actions=["file.write"],
+            approval_required_actions=["browser.submit"], resource_scope=["public documents"],
+            sensitive_resources=["private documents"], risk_indicators=[], interpretation_explanation="Public only",
+        )
+        proposal = IntentProposal(interpretation=intent, proposed_permissions=intent.permissions())
+        proposals = repository(session, r.IntentInterpretation)
+        source = proposals.add(r.IntentInterpretation(
+            task_id=task.id, interpreter="test", summary=task.objective, proposal=proposal.model_dump(mode="json"),
+        ))
+        failed = proposals.add(r.IntentInterpretation(
+            task_id=task.id, interpreter="test", summary="No suggestion", status="failed", failure_code="timeout",
+        ))
+        legacy = repository(session, r.Policy).add(r.Policy(owner_id=owner.id, name="Legacy"))
+        repository(session, r.PolicyVersion).add(r.PolicyVersion(policy_id=legacy.id, version=1, status="active"))
+
+    root = "/api/v1/policies"
+    url = migrated.engine.url.difference_update_query(["hostaddr"])
+    token = token_hex(32)
+    settings = Settings(env="testing", test_database_url=SecretStr(url.render_as_string(hide_password=False)),
+                        dev_identity_owner_id=owner.id, dev_identity_token=SecretStr(token))
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {"agent_id": str(agent.id), "proposal_id": str(source.id)}
+    with TestClient(create_app(settings)) as unauthenticated:
+        assert unauthenticated.post(root, json=payload).status_code == 401
+    with TestClient(create_app(settings), headers=headers) as client:
+        assert client.get(root).json() == []
+        assert client.get(f"{root}/{legacy.id}").status_code == 404
+        assert client.post(root, json={**payload, "status": "active"}).status_code == 422
+        assert client.post(root, json={**payload, "agent_id": str(sibling.id)}).status_code == 404
+        assert client.post(root, json={**payload, "proposal_id": str(failed.id)}).status_code == 404
+        created = client.post(root, json=payload)
+        assert created.status_code == 201
+        policy = created.json()
+        assert (policy["owner_id"], policy["task_id"], policy["agent_id"], policy["source_proposal_id"]) == (
+            str(owner.id), str(task.id), str(agent.id), str(source.id),
+        )
+        assert policy["active_version"] is None
+        draft = policy["latest"]
+        assert draft["status"] == "draft" and draft["version"] == 1 and draft["created_at"]
+        assert draft["approved_at"] is None
+        terms = draft["definition"]
+        assert terms["allowed_actions"] == ["browser.navigate", "browser.read"]
+        assert terms["denied_actions"] == ["file.write"]
+        assert terms["approval_required_actions"] == ["browser.submit"]
+        assert terms["resource_scope"] == ["public documents"] and terms["sensitive_resources"] == ["private documents"]
+        item = f"{root}/{policy['id']}"
+        history = f"{item}/versions"
+        version1 = f"{history}/1"
+        assert client.get(root).json() == [policy]
+        assert client.get(item).json() == policy
+        assert client.post(f"{version1}/approve", json={"approve": True}).status_code == 409
+        assert client.post(f"{version1}/submit").json()["status"] == "pending_approval"
+        for confirmation in ({}, {"approve": False}, {"approve": 1}):
+            assert client.post(f"{version1}/approve", json=confirmation).status_code == 422
+        assert client.get(item).json()["active_version"] is None
+        approved = client.post(f"{version1}/approve", json={"approve": True})
+        assert approved.status_code == 200 and approved.json()["approved_at"]
+        assert approved.json()["status"] == "active"
+        assert client.post(f"{version1}/approve", json={"approve": True}).status_code == 409
+
+        unchanged = {**terms, "allowed_actions": list(reversed(terms["allowed_actions"]))}
+        assert client.post(history, json={"base_version": 1, "definition": unchanged}).status_code == 409
+        conditions = {
+            "required_capability_ids": [str(uuid4())], "context_attributes": {"network": "local", "managed": True},
+            "not_before": "2026-01-01T08:00:00+08:00", "expires_at": "2099-01-01T00:00:00Z",
+        }
+        changed = {**terms, "allowed_actions": ["browser.read"], "conditions": conditions}
+        assert client.post(history, json={"base_version": 2, "definition": changed}).status_code == 409
+        assert client.post(history, json={"base_version": 1, "definition": {
+            **changed, "conditions": {**conditions, "expires_at": "2025-01-01T00:00:00Z"},
+        }}).status_code == 422
+        second = client.post(history, json={"base_version": 1, "definition": changed})
+        assert second.status_code == 201 and second.json()["status"] == "draft" and second.json()["version"] == 2
+        assert second.json()["definition"]["conditions"]["not_before"] == "2026-01-01T00:00:00Z"
+        assert client.post(history, json={"base_version": 2, "definition": {**changed, "allowed_actions": []}}).status_code == 409
+        version2 = f"{history}/2"
+        assert client.post(f"{version2}/submit").json()["status"] == "pending_approval"
+        assert client.get(item).json()["active_version"] == 1
+        assert client.post(f"{version2}/approve", json={"approve": True}).json()["status"] == "active"
+        assert client.get(item).json()["active_version"] == 2
+        assert client.post(f"{version1}/revoke").status_code == 409
+        assert client.post(f"{version1}/approve", json={"approve": True}).status_code == 409
+        revoked = client.post(f"{version2}/revoke")
+        assert revoked.status_code == 200 and revoked.json()["status"] == "revoked" and revoked.json()["revoked_at"]
+        assert client.post(f"{version2}/approve", json={"approve": True}).status_code == 409
+        assert client.get(item).json()["active_version"] is None
+
+    with TestClient(create_app(settings), headers=headers) as client:
+        old, new = client.get(history).json()
+        assert old == {**approved.json(), "status": "superseded", "superseded_at": new["approved_at"]}
+        assert new == revoked.json()
+        expired = {**changed, "conditions": {"expires_at": "2025-01-01T00:00:00Z"}}
+        assert client.post(history, json={"base_version": 2, "definition": expired}).status_code == 201
+        version3 = f"{history}/3"
+        assert client.post(f"{version3}/submit").status_code == 200
+        assert client.post(f"{version3}/approve", json={"approve": True}).status_code == 409
+        assert client.post(f"{version3}/revoke").json()["approved_at"] is None
+        assert client.get(item).json()["active_version"] is None
+    with TestClient(create_app(settings.model_copy(update={"dev_identity_owner_id": other.id})),
+                    headers=headers) as client:
+        assert client.get(root).json() == []
+        assert client.get(item).status_code == 404
+        assert client.get(history).status_code == 404
+        assert client.post(f"{version2}/approve", json={"approve": True}).status_code == 404
+        assert client.post(f"{version2}/revoke").status_code == 404
 
 
 def test_testing_does_not_use_development_url(monkeypatch: pytest.MonkeyPatch) -> None:

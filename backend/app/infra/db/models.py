@@ -120,11 +120,17 @@ class PolicyRow(Row):
     __table_args__ = (
         UniqueConstraint("owner_id", "name"),
         CheckConstraint("status IN ('active', 'disabled')", name="status"),
+        CheckConstraint(
+            "num_nonnulls(source_proposal_id, task_id, agent_id) IN (0, 3)", name="binding",
+        ),
     )
 
     owner_id: Mapped[UUID] = mapped_column(ref("users"))
     name: Mapped[str]
     status: Mapped[str] = mapped_column(server_default="active")
+    source_proposal_id: Mapped[UUID | None] = mapped_column(ref("intent_interpretations"))
+    task_id: Mapped[UUID | None] = mapped_column(ref("tasks"))
+    agent_id: Mapped[UUID | None] = mapped_column(ref("agents"))
 
 
 class PolicyVersionRow(Row):
@@ -132,15 +138,25 @@ class PolicyVersionRow(Row):
     __table_args__ = (
         UniqueConstraint("policy_id", "version"),
         CheckConstraint("version > 0", name="positive_version"),
-        CheckConstraint("status IN ('draft', 'active', 'superseded')", name="status"),
+        CheckConstraint("status IN ('draft', 'pending_approval', 'active', 'revoked', 'superseded')", name="status"),
         CheckConstraint("(status = 'superseded') = (superseded_at IS NOT NULL)", name="superseded_at"),
+        CheckConstraint("(status = 'revoked') = (revoked_at IS NOT NULL)", name="revoked_at"),
+        CheckConstraint(
+            "definition IS NULL OR status = 'revoked' OR "
+            "((status IN ('active', 'superseded')) = (approved_at IS NOT NULL))", name="approval",
+        ),
         Index("uq_policy_versions_active", "policy_id", unique=True, postgresql_where=text("status = 'active'")),
+        Index("uq_policy_versions_review", "policy_id", unique=True,
+              postgresql_where=text("definition IS NOT NULL AND status IN ('draft', 'pending_approval')")),
     )
 
     policy_id: Mapped[UUID] = mapped_column(ref("policies"))
     version: Mapped[int]
     status: Mapped[str] = mapped_column(server_default="draft")
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    definition: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PolicyRuleRow(Row):

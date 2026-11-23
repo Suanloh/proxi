@@ -8,7 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ...core.repositories import AgentConflict, AgentRepository, MutableRecordRepository, RecordRepository, T
+from ...core.policies.lifecycle import PolicyStatus, transition
+from ...core.repositories import (
+    AgentConflict, AgentRepository, MutableRecordRepository, PolicyRepository, RecordRepository, T,
+)
 from ...models import records
 from ..db import models
 
@@ -82,6 +85,11 @@ class _MutableRepository(_Repository[T]):
         row = self.session.get(self.row_type, record.id)
         if row is None:
             raise LookupError("Record not found")
+        if isinstance(row, models.PolicyVersionRow) and (row.definition is not None or values["definition"] is not None):
+            raise ValueError("Managed policy snapshots must use lifecycle transitions")
+        if isinstance(row, models.PolicyRow) and (row.source_proposal_id is not None
+                                                  or values["source_proposal_id"] is not None):
+            raise ValueError("Managed policy scope cannot be changed")
         for name, value in values.items():
             setattr(row, name, value)
         self.session.flush()
@@ -130,6 +138,58 @@ class _AgentRepository(_MutableRepository[records.Agent]):
         cause = exc.orig
         if isinstance(cause, UniqueViolation) and cause.diag.constraint_name in {"pk_agents", "uq_agents_owner_id"}:
             raise AgentConflict("Agent ID or owner/name already exists") from None
+
+
+class _PolicyRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._policies = _Repository(session, records.Policy)
+        self._versions = _Repository(session, records.PolicyVersion)
+
+    def add_policy(self, policy: records.Policy) -> records.Policy:
+        return self._policies.add(policy)
+
+    def add_version(self, version: records.PolicyVersion) -> records.PolicyVersion:
+        return self._versions.add(version)
+
+    @staticmethod
+    def _owned(owner_id: UUID):
+        return select(models.PolicyRow).where(
+            models.PolicyRow.owner_id == owner_id, models.PolicyRow.source_proposal_id.is_not(None),
+        )
+
+    def list_owned(self, owner_id: UUID) -> list[records.Policy]:
+        statement = self._owned(owner_id).order_by(models.PolicyRow.created_at, models.PolicyRow.id)
+        return [self._policies._record(row) for row in self._session.scalars(statement)]
+
+    def get_owned(self, owner_id: UUID, policy_id: UUID, *, for_update: bool = False) -> records.Policy | None:
+        statement = self._owned(owner_id).where(models.PolicyRow.id == policy_id)
+        if for_update:
+            statement = statement.with_for_update().execution_options(populate_existing=True)
+        row = self._session.scalar(statement)
+        return self._policies._record(row) if row is not None else None
+
+    def versions(self, policy_id: UUID) -> list[records.PolicyVersion]:
+        statement = select(models.PolicyVersionRow).where(
+            models.PolicyVersionRow.policy_id == policy_id, models.PolicyVersionRow.definition.is_not(None),
+        ).order_by(models.PolicyVersionRow.version)
+        return [self._versions._record(row) for row in self._session.scalars(statement)]
+
+    def transition(self, version_id: UUID, target: PolicyStatus, at: datetime) -> records.PolicyVersion:
+        row = self._session.get(models.PolicyVersionRow, version_id)
+        if row is None:
+            raise LookupError("Policy version not found")
+        updated = transition(self._versions._record(row), target, at)
+        row.status = updated.status
+        row.approved_at = updated.approved_at
+        row.revoked_at = updated.revoked_at
+        row.superseded_at = updated.superseded_at
+        self._session.flush()
+        return self._versions._record(row)
+
+
+def policy_repository(session: Session) -> PolicyRepository:
+    return _PolicyRepository(session)
 
 
 def agent_repository(session: Session) -> AgentRepository:
