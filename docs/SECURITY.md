@@ -36,6 +36,14 @@ A browser operation requires a credential bound to its agent and session, a matc
 
 A GET is not proof of a read-only server operation. Allowlist only trusted, read-only endpoints; enforce deployment egress controls for private addresses, DNS changes, and other unintended destinations. The adapter does not detect all prompt injection, constrain clients that bypass PROXI, or verify the behaviour of remote servers.
 
+### Controlled MCP and local-agent boundary
+
+The gateway calls one built-in read-only MCP tool over an in-process Python MCP SDK connection. The local adapter exposes only the registered catalog lookup. Both are disabled by default. Trusted server code fixes the integration identity, tool name, normalized action, and exact resource scope. Tool descriptions and other server-provided metadata do not grant authority.
+
+Dispatch requires a signed credential bound to the agent and session, a matching capability when required, and central authorization. A hold requires owner approval; revocation and revalidation use the same enforcement path as the browser. Audit events identify the fixed tool by its action and record the agent, session, and outcome without storing credentials, tool output, or arbitrary arguments. The built-in adapters accept no shell commands, file paths, or upstream connection settings.
+
+This is not a sandbox for third-party tool code and does not protect MCP clients or servers that connect outside PROXI. No generic MCP listener or remote server enrollment is provided.
+
 ### Behaviour analysis and dynamic trust
 
 Configure the engine with the `PROXI_TRUST_RULES` JSON environment variable. It accepts `initial_score`, `normal_min`, `monitored_min`, `restricted_min`, `restricted_actions`, `predecessors`, `repeat_window_seconds`, `denied_threshold`, `approval_threshold`, `recovery_successes`, `recovery_cooldown_seconds`, and per-rule `weights`. Band minima must strictly increase and scores stay within 0–100.

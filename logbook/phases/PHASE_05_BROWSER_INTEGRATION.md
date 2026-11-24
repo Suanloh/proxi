@@ -20,6 +20,10 @@ Each dispatch uses a fresh, offline Chromium context and bounded HTML fetched wi
 
 The [flight-fare demo](../../docs/DEVELOPMENT.md#controlled-browser-demo) verified authorized access, approval, and audited policy blocks for purchase and personal-data sharing. The full backend suite passed 77 tests; see [Prompt 12 verification](../TEST_LOG.md#prompt-12).
 
+## Prompt 13 integration follow-up
+
+The [controlled MCP gateway and local-agent adapter](../../docs/API.md#controlled-mcp-and-local-agent-tools) now use the same authorization pipeline for a single, exact-scope catalog lookup. See [Prompt 13 verification](../TEST_LOG.md#prompt-13). This follow-up adds no browser operations or extension.
+
 ## Next handoff
 
 See [current status](../CURRENT_STATUS.md) and wait for the next explicitly authorized prompt.

@@ -34,9 +34,12 @@ from app.infra.llm.deepseek import DeepSeekAdapter
 from app.infra.repos.sqlalchemy import agent_repository, mutable_repository, policy_repository, repository
 from app.infra.repos.trust import SqlTrustHistory
 from app.integrations.browser.playwright import BrowserExecutionError, PlaywrightBrowser
+from app.integrations.local_agent.catalog import lookup_catalog
+from app.integrations.mcp.gateway import McpCatalogGateway, catalog_server
 from app.main import access_service, authorization_transaction, create_app
 from app.models import records as r
 from app.schs.authz import ActionRequest, Decision, Outcome, Reason
+from app.schs.integrations import CatalogResult
 from app.schs.intent import IntentInterpretation, IntentProposal
 from app.schs.monitoring import EventFilters
 from app.schs.policies import PolicyDefinition
@@ -44,6 +47,7 @@ from app.svcs.authz import AuthorizationEngine
 from app.svcs.enforcement import EnforcementController, EnforcementResult
 from app.svcs.identity import AgentIdentityService, AgentNotFound
 from app.svcs.intent import IntentFailure, IntentFailureCode, IntentReview
+from app.svcs.integrations import LOCAL_CATALOG, MCP_CATALOG
 from app.svcs.monitoring import EventQuery, event_bus
 from app.svcs.policies import PolicyManagement
 from app.svcs.trust import DynamicTrust
@@ -757,6 +761,125 @@ def seed_authorization_policy(db: Database, case: AuthorizationCase, *, rule: st
             policies.transition(version.id, PolicyStatus.PENDING_APPROVAL, now)
             policies.transition(version.id, PolicyStatus.ACTIVE, now)
         return policy.id
+
+
+@pytest.mark.parametrize("scenario", ["allow", "deny", "scope", "missing", "expired", "hold", "failure", "local"])
+def test_controlled_tool_gateway(migrated: Database, monkeypatch: pytest.MonkeyPatch, scenario: str) -> None:
+    spec = LOCAL_CATALOG if scenario == "local" else MCP_CATALOG
+    resource = "catalog:unregistered" if scenario == "scope" else spec.resource
+    key, owner_token = SecretStr(token_hex(32)), token_hex(32)
+    calls: list[str] = []
+
+    def lookup(selected: str) -> CatalogResult:
+        calls.append(selected)
+        if scenario == "failure":
+            raise RuntimeError("upstream private detail")
+        return lookup_catalog(selected)
+
+    if spec == MCP_CATALOG:
+        monkeypatch.setattr("app.main.McpCatalogGateway", lambda: McpCatalogGateway(lambda: catalog_server(lookup)))
+    with migrated.transaction() as session:
+        users = repository(session, r.User)
+        owner = users.add(r.User(email="catalog@example.test"))
+        identity = AgentIdentityService(agent_repository(session), users)
+        agent = identity.register(owner.id, "Catalog reader", spec.kind)
+        task = repository(session, r.Task).add(r.Task(agent_id=agent.id, objective="Read the demo catalog"))
+        proposal = repository(session, r.IntentInterpretation).add(r.IntentInterpretation(
+            task_id=task.id, interpreter="test", summary=task.objective,
+        ))
+        access = access_service(session, identity, JwtCredentialCodec(key))
+        bound = access.create_session(owner.id, agent.id, 120)
+        _, token = access.issue_credential(owner.id, agent.id, bound.id)
+        cap = access.grant_capability(owner.id, agent.id, bound.id, task.id, spec.action, resource, 120)
+        action = ActionRequest(request_id=uuid4(), agent_id=agent.id, session_id=bound.id, task_id=task.id,
+                               action=spec.action, resource=resource, timestamp=datetime.now(timezone.utc),
+                               integration_type=spec.kind)
+        if scenario == "expired":
+            mutable_repository(session, r.AgentSession).update(replace(
+                bound, expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+            ))
+    case = AuthorizationCase(action, owner.id, proposal.id, cap.id, key, token)
+    seed_authorization_policy(migrated, case, rule=scenario if scenario in {"deny", "hold"} else "allow")
+
+    url = migrated.engine.url.difference_update_query(["hostaddr"])
+    settings = Settings(env="testing", test_database_url=SecretStr(url.render_as_string(hide_password=False)),
+                        credential_signing_key=key, dev_identity_owner_id=owner.id,
+                        dev_identity_token=SecretStr(owner_token), mcp_catalog_enabled=scenario != "allow",
+                        local_catalog_enabled=True)
+    app = create_app(settings)
+    path = f"/api/v1{spec.path}"
+    headers = {"Authorization": f"Bearer {token}"}
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    payload = action.model_dump(mode="json", exclude={"action", "integration_type", "params"})
+    payload["capability_id"] = None if scenario == "missing" else str(cap.id)
+    with TestClient(app) as client:
+        def submit(**updates: object) -> Response:
+            return client.post(path, headers=headers, json={**payload, **updates})
+
+        def audit(response: Response) -> set[str]:
+            logs = client.get("/api/v1/audit-logs", headers=owner_headers,
+                              params={"correlation_id": response.headers["X-Correlation-ID"]})
+            assert logs.status_code == 200
+            return {entry["event_type"] for entry in logs.json()
+                    if (entry["agent_id"], entry["session_id"], entry["action"]) == (
+                        str(agent.id), str(bound.id), spec.action,
+                    )}
+
+        def blocked(response: Response, reason: Reason) -> None:
+            assert response.status_code == 200
+            assert response.json()["decision"]["reason"] == reason
+            assert not response.json()["executed"] and response.json()["result"] is None
+            assert audit(response) >= {"ActionRequested", "ActionBlocked"}
+            assert "ActionExecuted" not in audit(response)
+
+        if scenario == "allow":
+            registry = app.state.integrations
+            assert not registry.inspect(spec).enabled
+            blocked(submit(), Reason.ADAPTER_UNAVAILABLE)
+            assert not calls
+            registry.enable(spec)
+            assert registry.inspect(spec).enabled
+            assert submit(session_id=str(uuid4())).status_code == 401
+            assert submit(arguments={"path": "not allowed"}).status_code == 422
+            assert client.post(f"{path}-unknown", headers=headers, json=payload).status_code == 404
+            assert not calls
+
+        response = submit()
+        reasons = {"deny": Reason.EXPLICIT_DENIAL, "scope": Reason.RESOURCE_OUT_OF_SCOPE,
+                   "missing": Reason.CAPABILITY_DENIED, "expired": Reason.SESSION_EXPIRED}
+        if scenario in reasons:
+            blocked(response, reasons[scenario])
+            assert not calls
+            return
+        if scenario == "failure":
+            assert response.status_code == 502 and "upstream private detail" not in response.text
+            assert response.headers["Cache-Control"] == "no-store"
+            assert audit(response) >= {"ActionAllowed", "IntegrationError"}
+            assert "ActionExecuted" not in audit(response) and calls == [resource]
+            return
+        if scenario == "hold":
+            assert response.status_code == 200 and response.json()["decision"]["outcome"] == "HOLD"
+            assert not response.json()["executed"] and not calls
+            approval = response.json()["approval_id"]
+            assert client.post(f"/api/v1/approvals/{approval}/approve", headers=owner_headers).status_code == 200
+            response = submit()
+
+        assert response.status_code == 200 and response.json()["executed"]
+        assert response.json()["result"] == {"entry": "proxi", "category": "demo"}
+        assert audit(response) >= {"ActionAllowed", "ActionExecuted"}
+        assert calls == ([resource] if spec == MCP_CATALOG else [])
+        if scenario == "hold":
+            blocked(submit(), Reason.APPROVAL_INVALID)
+            assert calls == [resource]
+        if scenario == "allow":
+            registry.disable(spec)
+            assert not registry.inspect(spec).enabled
+            blocked(submit(request_id=str(uuid4())), Reason.ADAPTER_UNAVAILABLE)
+            registry.enable(spec)
+            revoke_path = f"/api/v1/agents/{agent.id}/sessions/{bound.id}/revoke"
+            assert client.post(revoke_path, headers=owner_headers).status_code == 200
+            blocked(submit(request_id=str(uuid4())), Reason.SESSION_REVOKED)
+            assert calls == [resource]
 
 
 @pytest.fixture

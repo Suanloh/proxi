@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     trust_rules: TrustRules = Field(default_factory=TrustRules)
     browser_allowed_pages: tuple[PageURL, ...] = ()
     browser_denied_pages: tuple[PageURL, ...] = ()
+    mcp_catalog_enabled: bool = False
+    local_catalog_enabled: bool = False
 
     @field_validator("credential_signing_key")
     @classmethod

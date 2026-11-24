@@ -1,8 +1,8 @@
 # Current status
 
-- **Current prompt:** Prompt 12 — Playwright Browser Integration (`COMPLETE`; verified with Chromium and disposable PostgreSQL).
-- **Current phase (last reached):** [Phase 05 — Browser Integration](phases/PHASE_05_BROWSER_INTEGRATION.md) (`COMPLETE`). Phase numbers are checkpoint IDs, not prompt numbers.
-- **Overall status:** `IN PROGRESS` — deterministic authorization, human review, guarded browser dispatch, and dynamic trust restrictions are available; no hosted rollout.
+- **Current prompt:** Prompt 13 — MCP & Local Agent Integration (`COMPLETE`; verified with the Python MCP SDK and disposable PostgreSQL).
+- **Integration checkpoint:** [Phase 05 — Browser Integration](phases/PHASE_05_BROWSER_INTEGRATION.md) (`COMPLETE`), with the Prompt 13 catalog follow-up recorded. Phase numbers are checkpoint IDs, not prompt numbers.
+- **Overall status:** `IN PROGRESS` — deterministic authorization, human review, guarded browser and catalog dispatch, and dynamic trust restrictions are available; no hosted rollout.
 - **Status vocabulary:** `NOT STARTED`, `IN PROGRESS`, `BLOCKED`, `TESTING`, `COMPLETE`. Use evidence rather than completion percentages.
 
 ## Architecture layers
@@ -11,7 +11,7 @@
 | --- | --- | --- |
 | Completed | None | Foundation setup is complete, not the product layers. |
 | Partial (`IN PROGRESS`) | Experience | Next.js placeholder, reusable shell and light/dark tokens. Dashboard, controlled browser UI and Chrome extension are not implemented. |
-| Partial (`IN PROGRESS`) | Integration | Controlled Playwright navigation and reading are available. MCP and local-agent adapters are placeholders. |
+| Partial (`IN PROGRESS`) | Integration | Controlled Playwright navigation and reading, plus a fixed catalog lookup through MCP and a local-agent adapter. No generic MCP listener or remote enrollment. |
 | Partial (`IN PROGRESS`) | Identity & Authorization | Local owner-scoped agent and session lifecycle, short-lived JWT credentials, and task-scoped capability checks. No production owner authentication. |
 | Partial (`IN PROGRESS`) | Intelligence & Trust | Stored intent proposals, deterministic behaviour events, configurable trust scoring and owner review. |
 | Partial (`IN PROGRESS`) | Policy & Enforcement | Owner-managed policies and action approvals, deterministic authorization, and revalidating dispatch. No production execution adapter. |

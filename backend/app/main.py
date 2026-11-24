@@ -13,6 +13,7 @@ from .api.authz import create_authorization_router
 from .api.browser import create_browser_router
 from .api.errors import register_error_handlers
 from .api.health import router as health_router
+from .api.integrations import create_integration_router
 from .api.intent import create_intent_router
 from .api.monitoring import create_monitoring_router
 from .api.owner_auth import create_owner_auth
@@ -29,12 +30,15 @@ from .infra.repos.approvals import approval_repository
 from .infra.repos.sqlalchemy import agent_repository, mutable_repository, policy_repository, repository
 from .infra.repos.trust import SqlTrustHistory
 from .integrations.browser.playwright import PlaywrightBrowser
+from .integrations.local_agent.catalog import LocalCatalogAdapter
+from .integrations.mcp.gateway import McpCatalogGateway
 from .logging_config import configure_logging
 from .models.records import AgentSession, Capability, Credential, IntentInterpretation, Task, User
 from .svcs.access import AgentAccessService
 from .svcs.approvals import ActionApprovals
 from .svcs.authz import AuthorizationEngine
 from .svcs.identity import AgentIdentityService
+from .svcs.integrations import LOCAL_CATALOG, MCP_CATALOG, IntegrationRegistry
 from .svcs.intent import IntentInterpreter, IntentReview
 from .svcs.monitoring import EventQuery, event_bus
 from .svcs.policies import PolicyManagement
@@ -196,6 +200,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     browser = PlaywrightBrowser(settings.browser_allowed_pages, settings.browser_denied_pages)
     app.include_router(create_browser_router(browser, codec, authorization_check_transaction,
                                              record_credential_denial), prefix="/api/v1")
+    integrations = IntegrationRegistry()
+    integrations.register(MCP_CATALOG, McpCatalogGateway())
+    integrations.register(LOCAL_CATALOG, LocalCatalogAdapter())
+    if settings.mcp_catalog_enabled:
+        integrations.enable(MCP_CATALOG)
+    if settings.local_catalog_enabled:
+        integrations.enable(LOCAL_CATALOG)
+    app.state.integrations = integrations
+    app.include_router(create_integration_router(integrations, codec, authorization_check_transaction,
+                                                 record_credential_denial), prefix="/api/v1")
     app.include_router(create_intent_router(authenticate_owner, intent_transaction, interpreter), prefix="/api/v1")
     app.include_router(create_policy_router(authenticate_owner, policy_transaction), prefix="/api/v1")
     app.include_router(create_approval_router(authenticate_owner, approval_transaction), prefix="/api/v1")

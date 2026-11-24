@@ -113,6 +113,13 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 - **Editor diagnostics:** No errors reported for the eight changed Python files.
 - **Not run:** Live travel sites, hosted rollout, and browser UI. No migrations or Chrome extension were introduced.
 
+## Prompt 13
+
+- **Focused integration tests:** From `backend`, `..\.venv\Scripts\python.exe -m pytest app\tests\test_database.py -k controlled_tool_gateway -q` — 8 passed, 53 deselected in 11.58 s using MCP SDK 1.30.0 and disposable loopback PostgreSQL. Covers authorized MCP and local lookups, explicit denial, scope enforcement, missing capability, expired and revoked sessions, wrong bearer binding, enable/disable, exact single-use approval, audit correlation, and a sanitized MCP failure.
+- **Backend regression:** From `backend`, `..\.venv\Scripts\python.exe -m pytest app\tests -q --tb=short` — 85 passed in 50.06 s with `PROXI_ENV=testing`, disposable loopback PostgreSQL 19 beta 20, and a temporary Playwright Chromium cache. The first run without Chromium passed 83 tests and failed the two browser tests; both passed after installing Chromium. The disposable cluster was stopped and its files and Chromium cache removed.
+- **Editor diagnostics and dependencies:** No errors reported for the eight changed Python files; `pip check` passed.
+- **Not run:** Hosted rollout or third-party MCP servers; both are outside this prompt's scope.
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

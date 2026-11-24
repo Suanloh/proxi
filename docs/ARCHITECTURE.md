@@ -49,7 +49,7 @@ The **Control Plane** owns policy, identity/capability administration, approval 
 
 The owner submits a non-sensitive task for interpretation. The DeepSeek adapter receives only that task text and the schema instructions, with no tools or access to repositories. The backend validates the returned JSON and stores a proposal for explicit human review, or records a classified failure with no proposal. Neither path writes policies, capabilities, or authorization decisions. Schema validation does not guarantee that the proposal reflects the user's intent. See the [intent API](API.md#intent-proposals).
 
-## Planned integration flow and security boundaries
+## Integration flow and security boundaries
 
 1. Browser, MCP or local-agent adapters normalize untrusted input and pass it to the same application/security pipeline.
 2. Validate identity, session, credentials and capability scope. Treat web content and agent instructions as untrusted. Validate any LLM response against a schema; neither LLM output nor trust grants authority.
@@ -57,4 +57,4 @@ The owner submits a non-sensitive task for interpretation. The DeepSeek adapter 
 4. Before executing an approved action, revalidate authorization, revocations, session expiry and resource scope. The executor applies least privilege, including explicit restrictions for local file and system operations.
 5. Record decisions, execution outcomes and relevant security events without embedding credentials or sensitive input. Integrations that bypass the pipeline are not protected.
 
-The [controlled Playwright browser](API.md#controlled-browser) implements this flow for exact-page navigation and reading. MCP and local-agent execution remain planned.
+The [controlled Playwright browser](API.md#controlled-browser) implements this flow for exact-page navigation and reading. The [MCP gateway and local-agent adapter](API.md#controlled-mcp-and-local-agent-tools) implement it for a fixed, read-only catalog lookup. The MCP gateway uses a Python SDK session to a built-in in-process server; the local adapter implements a synchronous execution contract. Both resolve tool identity and scope from trusted registrations, not client input or tool descriptions.

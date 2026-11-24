@@ -2,6 +2,12 @@
 
 Newest prompt first. Describe actual changes, not planned work. Record test outcomes in the [test log](TEST_LOG.md).
 
+## Prompt 13 — MCP & Local Agent Integration
+
+- **Added:** Python MCP SDK gateway and local adapter for one read-only catalog lookup, plus trusted process-local integration management.
+- **Security:** Both tools are off by default and use the same credential, capability, policy, approval, revocation, and audit pipeline as controlled browser calls. Neither accepts commands or paths.
+- **Testing:** See [Prompt 13 verification](TEST_LOG.md#prompt-13).
+
 ## Prompt 11 — Audit Logging & Security Monitoring
 
 - **Added:** In-process lifecycle events, transactional audit persistence, structured security classifications, and filtered owner-scoped read endpoints.

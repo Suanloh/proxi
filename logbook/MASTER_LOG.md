@@ -143,6 +143,13 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Security:** Only exact-page navigation and reading are supported. Fresh offline Chromium contexts do not share browser state. The demo shows policy enforcement, not general prompt-injection detection or protection for traffic that bypasses PROXI.
 - **Stop point:** No Chrome extension, live travel site test, or hosted rollout. Wait for the next authorized prompt.
 
+## Prompt 13 — MCP & Local Agent Integration
+
+- **Implemented:** Added [tool routes](../backend/app/api/integrations.py), [request and response schemas](../backend/app/schs/integrations.py), a [trusted integration registry](../backend/app/svcs/integrations.py), the [Python MCP SDK gateway](../backend/app/integrations/mcp/gateway.py), and a [local catalog adapter](../backend/app/integrations/local_agent/catalog.py). Updated startup wiring, configuration, dependencies, tests, and operator documentation. No database migration was added.
+- **Verified:** A real MCP SDK tool call and a local lookup returned the read-only catalog entry only after authorization. The tests confirmed that denial, out-of-scope requests, missing capability, session expiry, revocation, and pending approval did not dispatch. They also covered single-use approval and sanitized server failures. See [Prompt 13 verification](TEST_LOG.md#prompt-13).
+- **Security:** Both integrations start disabled, with fixed identity and resource scope. Tool descriptions do not affect authorization. Registry changes are process-local. No shell execution, unrestricted file access, generic MCP listener, or protection for out-of-gateway traffic.
+- **Stop point:** No other integrations, hosted rollout, or UI changes. Wait for the next explicitly authorized prompt.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

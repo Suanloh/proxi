@@ -70,6 +70,19 @@ The endpoint returns HTTP `200` with `request_id`, `outcome` (`ALLOW`, `HOLD`, o
 
 See the [local flight demo](DEVELOPMENT.md#controlled-browser-demo) and [security boundary](SECURITY.md#controlled-browser-boundary).
 
+## Controlled MCP and local-agent tools
+
+| `POST` route | Agent type | Policy and capability action |
+| --- | --- | --- |
+| `/api/v1/mcp/servers/catalog/tools/lookup` | `mcp` | `mcp.catalog.lookup` |
+| `/api/v1/local-agent/tools/catalog-lookup` | `local` | `local.catalog.lookup` |
+
+Both routes require an agent bearer credential bound to the supplied `agent_id` and `session_id`. The JSON body contains `request_id`, `agent_id`, `session_id` (UUIDs), a timezone-aware `timestamp`, and `resource`; `task_id` and `capability_id` are optional UUID fields. Supply the matching capability when required. Extra fields are rejected. The route fixes the tool identity and permits only the exact resource `catalog:proxi`.
+
+The response contains `decision`, `executed`, `approval_id`, and `result`. A block or hold does not execute the tool. An approval applies only to an exact retry under [the same rules as other actions](#action-approvals). Successful execution returns `result: {"entry":"proxi","category":"demo"}`. An adapter failure returns a generic `502`; upstream error text is not returned.
+
+These are PROXI HTTP routes, not a generic MCP protocol endpoint. Tool registration, enablement, disablement, and inspection are trusted backend operations, not agent-facing APIs.
+
 ## Action approvals
 
 The enforcement controller persists a `HOLD` and returns an approval ID equal to the action's request UUID. The authorization check does not create holds. These endpoints require the local owner bearer, not an agent JWT, and only expose the owner's approvals.
