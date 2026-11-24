@@ -2,6 +2,23 @@
 
 Newest prompt first. Describe actual changes, not planned work. Record test outcomes in the [test log](TEST_LOG.md).
 
+## Prompt 13 — MCP & Local Agent Integration
+
+- **Added:** Python MCP SDK gateway and local adapter for one read-only catalog lookup, plus trusted process-local integration management.
+- **Security:** Both tools are off by default and use the same credential, capability, policy, approval, revocation, and audit pipeline as controlled browser calls. Neither accepts commands or paths.
+- **Testing:** See [Prompt 13 verification](TEST_LOG.md#prompt-13).
+
+## Prompt 11 — Audit Logging & Security Monitoring
+
+- **Added:** In-process lifecycle events, transactional audit persistence, structured security classifications, and filtered owner-scoped read endpoints.
+- **Security:** Monitoring history is append-only through the application. Records omit raw credentials and arbitrary request payloads; storage is not tamper-proof.
+- **Changed:** Revision `0008` adds structured audit fields, lookup indexes, and links from security events to their source audit records.
+
+## Prompt 08 — Authorization & Enforcement Engine
+
+- **Added:** Normalized action requests, structured authorization decisions, a protected decision-only endpoint, and an enforcement controller with an adapter allowlist and mandatory decision recorder.
+- **Security:** Explicit denial overrides grants; `HOLD` and `BLOCK` never dispatch. The controller revalidates immediately before synchronous dispatch and serializes supported revocations against it.
+
 ## Prompt 06 — DeepSeek Intent Interpretation
 
 - **Added:** Configurable DeepSeek adapter, validated intent and permission schemas, and owner-scoped submission and review endpoints.
@@ -62,6 +79,12 @@ Newest prompt first. Describe actual changes, not planned work. Record test outc
 - **Changed:** Revision `0005` persists policy scope, version definitions and lifecycle metadata while retaining legacy records.
 - **Security:** Provider output remains advisory, and only explicit owner approval of a pending version can activate it. No authorization pipeline was added.
 - **Testing:** 36 backend tests passed; Alembic reported no drift. See [verification](TEST_LOG.md#prompt-07).
+
+## Prompt 12 — Playwright Browser Integration
+
+- **Added:** [Controlled browser API](../docs/API.md#controlled-browser) for agent-bound navigation and reading, plus a reproducible [flight-fare demo](../docs/DEVELOPMENT.md#controlled-browser-demo).
+- **Security:** Exact-page allow/deny scopes, isolated offline rendering, single-use approval retries, and correlated audit records. Click, fill, and download are unsupported.
+- **Testing:** 77 backend tests passed with real Chromium and disposable PostgreSQL. See [verification](TEST_LOG.md#prompt-12).
 
 ## Entry template
 

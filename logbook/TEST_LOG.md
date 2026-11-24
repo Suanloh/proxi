@@ -82,6 +82,44 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 | P07-02 | Migration round-trip and schema drift | Revision `0005` applies and mappings match the schema | Round-trip passed in the suite; Alembic detected no new upgrade operations | PASS | From `backend`: `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` | None |
 | P07-03 | Hosted rollout | Verify hosted migrations and endpoints | No hosted database accessed | NOT RUN | Local PostgreSQL only | Verify during an authorized rollout |
 
+## Prompt 08
+
+- **Backend regression:** `pytest -q` — 53 passed on disposable PostgreSQL 18.7. Includes policy conflicts, identity and access prerequisites, scope, approval holds, recorder failure, and session/policy revocation between authorization checks.
+- **Schema:** Migration round-trip passed in the backend suite. `alembic upgrade head` and `alembic check` succeeded; no schema drift detected.
+- **Scope:** Dispatch was tested with synchronous test adapters. No browser, MCP, hosted database, or production decision sink was exercised.
+
+## Prompt 09
+
+- **Backend regression:** 61 passed on disposable PostgreSQL 18.7 (from `backend`: `..\.venv\Scripts\python.exe -m pytest -q app\tests --tb=short`). Covers no dispatch before review, exact retry, concurrent claims and replay, rejection, cancellation, expiry, hard denial, removed policy gate, and revocation before and after a claim.
+- **Schema:** Migration round-trip passed in the suite. `alembic upgrade head` and `alembic check` succeeded with revision `0006`; no new upgrade operations detected.
+- **Scope:** Tests used synchronous test adapters and the local owner bearer. No hosted database or production executor was tested.
+
+## Prompt 10
+
+- **Backend regression:** `pytest -xq` — 73 passed on disposable PostgreSQL 18.7. Coverage includes repeat escalation, evidence linkage, score limits and band boundaries, intent and sequence checks, approval retry deduplication, hard-deny precedence, restricted dispatch, and recovery.
+- **Schema:** Migration round-trip passed in the suite. `alembic upgrade head` and `alembic check` succeeded with revision `0007`; no schema drift detected.
+- **Scope:** Tests used synchronous test adapters and the local owner bearer. No hosted database or production executor was tested.
+
+## Prompt 11
+
+- **Backend regression:** From the repository root, `.\.venv\Scripts\python.exe -m pytest -xq --tb=short` — 75 passed on disposable PostgreSQL 18.7. Covers audit persistence and rollback, classification, owner isolation, filters, request correlation, credential redaction, and application-level append-only history. Earlier runs exposed invalid fixture references and a missing expected trust update; both test issues were corrected.
+- **Schema:** Revision `0008` round-tripped in the suite. From `backend`, `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` passed with no new upgrade operations detected. Both runs used `PROXI_ENV=testing` and a disposable loopback DSN.
+- **Not run:** Hosted rollout and production execution adapter tests; validation used local PostgreSQL and test adapters. SQLite is not a supported backend; its integrity limits are documented.
+
+## Prompt 12
+
+- **Focused browser tests:** From `backend`, `..\.venv\Scripts\python.exe -m pytest app\tests\test_database.py -k browser -q` — 2 passed, 51 deselected in 7.88 s. Covers navigation, approvals and single-use retry, prohibited purchase and disclosure, denylist precedence, missing capability, cross-agent binding, session revocation, sanitized execution failure, and correlated audit events. The loopback fixture confirms no redirect or subresource requests.
+- **Backend regression:** From `backend`, `..\.venv\Scripts\python.exe -m pytest -q app\tests --tb=short` — 77 passed in 44.26 s using Chromium and disposable PostgreSQL 17.9. The run used `PROXI_ENV=testing`, a loopback `PROXI_TEST_DATABASE_URL`, and the workspace `PLAYWRIGHT_BROWSERS_PATH`. PostgreSQL was stopped and its temporary directory removed.
+- **Editor diagnostics:** No errors reported for the eight changed Python files.
+- **Not run:** Live travel sites, hosted rollout, and browser UI. No migrations or Chrome extension were introduced.
+
+## Prompt 13
+
+- **Focused integration tests:** From `backend`, `..\.venv\Scripts\python.exe -m pytest app\tests\test_database.py -k controlled_tool_gateway -q` — 8 passed, 53 deselected in 11.58 s using MCP SDK 1.30.0 and disposable loopback PostgreSQL. Covers authorized MCP and local lookups, explicit denial, scope enforcement, missing capability, expired and revoked sessions, wrong bearer binding, enable/disable, exact single-use approval, audit correlation, and a sanitized MCP failure.
+- **Backend regression:** From `backend`, `..\.venv\Scripts\python.exe -m pytest app\tests -q --tb=short` — 85 passed in 50.06 s with `PROXI_ENV=testing`, disposable loopback PostgreSQL 19 beta 20, and a temporary Playwright Chromium cache. The first run without Chromium passed 83 tests and failed the two browser tests; both passed after installing Chromium. The disposable cluster was stopped and its files and Chromium cache removed.
+- **Editor diagnostics and dependencies:** No errors reported for the eight changed Python files; `pip check` passed.
+- **Not run:** Hosted rollout or third-party MCP servers; both are outside this prompt's scope.
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

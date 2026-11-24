@@ -17,6 +17,7 @@ from .owner_auth import bearer_required
 def create_access_router(
     authenticate_owner: Callable[..., UUID],
     access_transaction: Callable[[Request], AbstractContextManager[AgentAccessService]],
+    record_denial: Callable[[Request], None] = lambda _request: None,
 ) -> APIRouter:
     router = APIRouter(prefix="/agents/{agent_id}/sessions", tags=["agent access"])
     agent_bearer = HTTPBearer(auto_error=False, scheme_name="AgentBearer", bearerFormat="JWT")
@@ -34,8 +35,10 @@ def create_access_router(
         except (InvalidAgentStatus, InvalidSession):
             raise HTTPException(status_code=409) from None
 
-    def authenticate_agent(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(agent_bearer)]) -> str:
+    def authenticate_agent(request: Request,
+                           credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(agent_bearer)]) -> str:
         if credentials is None or len(credentials.credentials) > 2048:
+            record_denial(request)
             raise bearer_required()
         return credentials.credentials
 
@@ -80,10 +83,19 @@ def create_access_router(
         service.revoke_capability(owner, agent_id, session_id, capability_id)
 
     @router.post("/{session_id}/access-check", status_code=204)
-    def check_access(agent_id: UUID, session_id: UUID, body: AccessCheck, token: Token, service: Access) -> None:
-        service.require_access(
-            token, agent_id=agent_id, session_id=session_id, capability_id=body.capability_id,
-            task_id=body.task_id, action=body.action, resource=body.resource,
-        )
+    def check_access(agent_id: UUID, session_id: UUID, body: AccessCheck, token: Token, request: Request) -> None:
+        failure: HTTPException | None = None
+        with access_transaction(request) as service:
+            try:
+                service.require_access(
+                    token, agent_id=agent_id, session_id=session_id, capability_id=body.capability_id,
+                    task_id=body.task_id, action=body.action, resource=body.resource,
+                )
+            except InvalidCredential:
+                failure = bearer_required()
+            except CapabilityDenied:
+                failure = HTTPException(status_code=403)
+        if failure is not None:
+            raise failure
 
     return router

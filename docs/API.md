@@ -52,3 +52,64 @@ These routes require the [local owner bearer](DEVELOPMENT.md#agent-identity-api-
 A definition contains `allowed_actions`, `denied_actions`, `approval_required_actions`, `resource_scope`, `sensitive_resources`, and optional `conditions`. Conditions can specify `required_capability_ids`, timezone-aware `not_before` and `expires_at`, and `context_attributes` with string, integer or boolean values. The three action lists are disjoint. Revisions preserve prior definitions and allow at most one outstanding draft or pending version. An existing active version remains active until superseded or explicitly revoked.
 
 Unknown or out-of-scope resources return `404`; invalid transitions, stale or unchanged revisions, and approval of an expired version return `409`; invalid request bodies return `422`. `active_version` is a lifecycle indicator, not a runtime authorization decision. Policy approval does not satisfy individual action approval requirements.
+
+## Authorization check
+
+`POST /api/v1/authorization/check` requires an agent bearer JWT whose agent and session match the request. Send a JSON object with `request` and `capability_id`. The `request` contains `request_id`, `agent_id`, `session_id`, `action`, `resource`, `timestamp` (timezone-aware), `integration_type`, optional `params`, and optional `task_id`. Current capabilities require a pending task and bind to its exact action and resource, so omitting `task_id` or `capability_id` cannot authorize the request.
+
+The endpoint returns HTTP `200` with `request_id`, `outcome` (`ALLOW`, `HOLD`, or `BLOCK`), `reason`, `failed_checks`, `matched_policy` (policy ID and version identifiers, when applicable), and `required_approval` for a hold. Missing, invalid, expired, or mismatched JWTs receive `401` before evaluation; the engine checks stored credential state again. The database and signing key must be configured. Responses with decisions are not cached. This endpoint does not accept trusted context, execute the action, or create an approval request. An `ALLOW` is not reusable execution authority. See [authorization and enforcement](SECURITY.md#authorization-and-enforcement).
+
+## Controlled browser
+
+`POST /api/v1/browser/actions` requires an agent JWT for the supplied `agent_id` and `session_id`. Submit `request_id`, `agent_id`, `session_id`, `task_id`, `capability_id` (UUIDs), `action`, `url` and a timezone-aware `timestamp`.
+
+- `browser.navigate` fetches and renders the page, returning its URL and title. `browser.read` fetches it afresh and also returns bounded body text. Neither retains browser state. Other browser actions, including click, fill and download, cannot execute.
+- Configure `PROXI_BROWSER_ALLOWED_PAGES` and `PROXI_BROWSER_DENIED_PAGES` as JSON arrays of exact URLs. The default empty allowlist blocks all pages and the denylist takes precedence. Use the same canonical URL in the capability, policy and request. URLs must use HTTPS with a DNS hostname (HTTP is also accepted on `127.0.0.1` for local demos) and cannot contain credentials, escaped characters, query strings or fragments.
+- Responses include `decision`, `executed`, `approval_id` and `result`. `BLOCK` and `HOLD` have no page result. To continue a hold, the owner approves via the [approval API](#action-approvals), then the agent retries the same payload, including its request ID and timestamp. An adapter failure returns `502` without page/provider details.
+- Decision and dispatch events are visible to the owner by `X-Correlation-ID` in [audit logs](#audit-and-security-monitoring). Page text is untrusted and is never treated as approval.
+
+See the [local flight demo](DEVELOPMENT.md#controlled-browser-demo) and [security boundary](SECURITY.md#controlled-browser-boundary).
+
+## Controlled MCP and local-agent tools
+
+| `POST` route | Agent type | Policy and capability action |
+| --- | --- | --- |
+| `/api/v1/mcp/servers/catalog/tools/lookup` | `mcp` | `mcp.catalog.lookup` |
+| `/api/v1/local-agent/tools/catalog-lookup` | `local` | `local.catalog.lookup` |
+
+Both routes require an agent bearer credential bound to the supplied `agent_id` and `session_id`. The JSON body contains `request_id`, `agent_id`, `session_id` (UUIDs), a timezone-aware `timestamp`, and `resource`; `task_id` and `capability_id` are optional UUID fields. Supply the matching capability when required. Extra fields are rejected. The route fixes the tool identity and permits only the exact resource `catalog:proxi`.
+
+The response contains `decision`, `executed`, `approval_id`, and `result`. A block or hold does not execute the tool. An approval applies only to an exact retry under [the same rules as other actions](#action-approvals). Successful execution returns `result: {"entry":"proxi","category":"demo"}`. An adapter failure returns a generic `502`; upstream error text is not returned.
+
+These are PROXI HTTP routes, not a generic MCP protocol endpoint. Tool registration, enablement, disablement, and inspection are trusted backend operations, not agent-facing APIs.
+
+## Action approvals
+
+The enforcement controller persists a `HOLD` and returns an approval ID equal to the action's request UUID. The authorization check does not create holds. These endpoints require the local owner bearer, not an agent JWT, and only expose the owner's approvals.
+
+| Method and path | Behavior |
+| --- | --- |
+| `GET /api/v1/approvals` | List pending requests, newest first. Use `history=true` for non-pending requests. `limit` defaults to 50 (max 100); `offset` defaults to 0. |
+| `GET /api/v1/approvals/{approval_id}` | Return the action snapshot, hold reason, policy version IDs, expiry, reviewer and decision time, and claim time if consumed. |
+| `POST /api/v1/approvals/{approval_id}/approve` | Approve a pending request. Does not execute it. |
+| `POST /api/v1/approvals/{approval_id}/reject` | Reject a pending request. |
+| `POST /api/v1/approvals/{approval_id}/cancel` | Cancel a pending request. |
+
+A request starts `PENDING` and can become `APPROVED`, `REJECTED`, or `CANCELLED`. Unconsumed pending and approved requests become `EXPIRED` after five minutes; the original review is still visible in history. Repeating the same current decision returns it unchanged; conflicting or expired reviews return `409`. Unknown or out-of-scope IDs return `404`. To execute after approval, resubmit the exact action through the enforcement controller. The claim timestamp records use of the approval, not execution success.
+
+## Trust review
+
+`POST /api/v1/agents/{agent_id}/trust/review` requires the local owner bearer and has no request body. After the configured cooldown, an active owner can move an active owned agent up one band: suspended to restricted, or restricted to enhanced monitoring. The endpoint returns `204` without a body, `403` for an inactive owner, `404` for an unknown or unowned agent, and `409` for an inactive agent, ineligible band, or unelapsed cooldown. It cannot reactivate an agent, grant capabilities, change policy, or satisfy action approval.
+
+The authorization check can return `BLOCK` with `reason: "trust_restricted"` for an otherwise eligible request. The enforcement controller can also apply behavior signals during final revalidation, so a preview `ALLOW` is not a dispatch guarantee.
+
+## Audit and security monitoring
+
+- `GET /api/v1/audit-logs` lists structured operation records.
+- `GET /api/v1/security-events` lists classified security events. Each includes `audit_event_id` linking to its source operation.
+
+Both routes require the configured owner bearer and an active stored owner. Results include only that owner's structured events; anonymous and legacy unscoped records are not exposed. Responses are `Cache-Control: no-store`. There are no write routes.
+
+Filters combine with AND: `since` (inclusive) and `until` (exclusive) accept timezone-aware timestamps; `agent_id`, `event_type`, `action`, `decision` (`ALLOW`, `HOLD`, `BLOCK`), `severity`, and `correlation_id` are exact matches. Results are newest first, with `limit` (1–100, default 50) and `offset` (0–10000, default 0).
+
+Use the server-generated `X-Correlation-ID` response header to find rows from a request. It is independent of the action's `request_id`; inbound correlation headers are ignored. A successful access prerequisite check is recorded separately from an authorization allowance or actual dispatch.

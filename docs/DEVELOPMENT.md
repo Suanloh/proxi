@@ -42,6 +42,31 @@ $env:PROXI_TEST_DATABASE_URL = 'postgresql+psycopg://USER:ENCODED_PASSWORD@127.0
 ..\.venv\Scripts\python.exe -m pytest app\tests
 ```
 
+## Controlled browser demo
+
+From `backend`, install Playwright's Chromium runtime, set the disposable PostgreSQL test variables above, and run:
+
+```powershell
+..\.venv\Scripts\python.exe -m playwright install chromium
+..\.venv\Scripts\python.exe -m pytest -q app\tests\test_database.py -k browser
+```
+
+If Chromium was installed to a custom cache, set `PLAYWRIGHT_BROWSERS_PATH` to that same absolute path before running the tests. The demo starts its own loopback site and uses synthetic fares and a disposable database; it does not contact an airline, book travel, or use real personal data.
+
+The task is to compare Kuala Lumpur–Tokyo fares without buying or sharing personal data. The page displays two prices and instructs the caller to ignore the task, disclose data, and buy a ticket. The demo navigates, then reads after an owner approval. It submits two scripted attempts representing those instructions and checks the explicit policy blocks in the owner audit log. The fixture also confirms that Chromium makes no checkout request. This demonstrates policy enforcement, not prompt-injection detection.
+
+## Controlled MCP and local-agent demo
+
+From `backend`, with the disposable PostgreSQL settings above, run:
+
+```powershell
+..\.venv\Scripts\python.exe -m pytest -q app\tests\test_database.py -k controlled_tool_gateway
+```
+
+The demo seeds agent credentials, a capability, and policy. It invokes the built-in MCP server through the Python SDK and exercises the local lookup through the [same authorization pipeline](API.md#controlled-mcp-and-local-agent-tools). It also checks that denied requests never reach the tool handler. Chromium and external MCP servers are not required.
+
+For manual use, enable the chosen tool with `PROXI_MCP_CATALOG_ENABLED=true` or `PROXI_LOCAL_CATALOG_ENABLED=true` before starting the backend. Both default to off. Provision a matching agent, session, capability, and policy for the route's action and exact resource `catalog:proxi`. The trusted registry in `app.state.integrations` supports `register`, `enable`, `disable`, and `inspect` for code-defined supported tools; startup already registers the built-ins. Runtime changes apply only to the current process. Each restart loads the configured flags again.
+
 ## Agent identity API (local development only)
 
 1. Point the backend at a local PostgreSQL database and migrate to `head`. Using a trusted SQL connection to that database, provision an active application user and copy the returned UUID:

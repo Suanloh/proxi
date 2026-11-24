@@ -15,7 +15,7 @@ The starting worktree contained project instructions and two agent documents. Th
 | Policy & Enforcement | Evaluate policy, authorize actions, coordinate approvals and enforce decisions | `core/{policies,authz,enforcement,approvals}` |
 | Data & Audit | Persist state and policy history, record audit/security events and deliver outbound IO | `infra/{db,repos,events,creds,llm}` |
 
-These are logical responsibilities within one Python backend deployment, not six network services. The HTTP boundary exposes liveness and [local-only agent identity management](DEVELOPMENT.md#agent-identity-api-local-development-only). The identity service owns registration and lifecycle decisions, with persistence behind an owner-scoped repository. Agent authentication, policy evaluation and enforcement are not implemented. The Next.js experience shell is a separate process, not a backend domain service.
+These are logical responsibilities within one Python backend deployment, not six network services. The HTTP boundary exposes liveness and [local-only agent identity management](DEVELOPMENT.md#agent-identity-api-local-development-only). The identity service owns registration and lifecycle decisions, with persistence behind an owner-scoped repository. Agent JWT authentication and deterministic policy evaluation are implemented. The [enforcement controller](SECURITY.md#authorization-and-enforcement) revalidates before dispatch, but no production executor or decision sink is wired. The Next.js experience shell is a separate process, not a backend domain service.
 
 ## Hexagonal boundaries and dependency direction
 
@@ -49,10 +49,12 @@ The **Control Plane** owns policy, identity/capability administration, approval 
 
 The owner submits a non-sensitive task for interpretation. The DeepSeek adapter receives only that task text and the schema instructions, with no tools or access to repositories. The backend validates the returned JSON and stores a proposal for explicit human review, or records a classified failure with no proposal. Neither path writes policies, capabilities, or authorization decisions. Schema validation does not guarantee that the proposal reflects the user's intent. See the [intent API](API.md#intent-proposals).
 
-## Planned integration flow and security boundaries
+## Integration flow and security boundaries
 
 1. Browser, MCP or local-agent adapters normalize untrusted input and pass it to the same application/security pipeline.
 2. Validate identity, session, credentials and capability scope. Treat web content and agent instructions as untrusted. Validate any LLM response against a schema; neither LLM output nor trust grants authority.
 3. Deterministic policy yields `ALLOW`, `HOLD` or `BLOCK`. Hard denies cannot be overridden by trust or approval. `HOLD` means nothing executed.
 4. Before executing an approved action, revalidate authorization, revocations, session expiry and resource scope. The executor applies least privilege, including explicit restrictions for local file and system operations.
 5. Record decisions, execution outcomes and relevant security events without embedding credentials or sensitive input. Integrations that bypass the pipeline are not protected.
+
+The [controlled Playwright browser](API.md#controlled-browser) implements this flow for exact-page navigation and reading. The [MCP gateway and local-agent adapter](API.md#controlled-mcp-and-local-agent-tools) implement it for a fixed, read-only catalog lookup. The MCP gateway uses a Python SDK session to a built-in in-process server; the local adapter implements a synchronous execution contract. Both resolve tool identity and scope from trusted registrations, not client input or tool descriptions.

@@ -195,14 +195,22 @@ class AuthorizationDecisionRow(Row):
 
 class ApprovalRequestRow(Row):
     __tablename__ = "approval_requests"
+    __table_args__ = (CheckConstraint(
+        "(reviewer_id IS NULL AND snapshot IS NULL AND consumed_at IS NULL) OR "
+        "(reviewer_id IS NOT NULL AND snapshot IS NOT NULL AND (consumed_at IS NULL OR consumed_at < expires_at))",
+        name="binding",
+    ),)
 
     decision_id: Mapped[UUID] = mapped_column(ref("authorization_decisions"), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    reviewer_id: Mapped[UUID | None] = mapped_column(ref("users"), index=True)
+    snapshot: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ApprovalRecordRow(Row):
     __tablename__ = "approval_records"
-    __table_args__ = (CheckConstraint("outcome IN ('approved', 'rejected')", name="outcome"),)
+    __table_args__ = (CheckConstraint("outcome IN ('approved', 'rejected', 'cancelled')", name="outcome"),)
 
     approval_request_id: Mapped[UUID] = mapped_column(ref("approval_requests"), unique=True)
     reviewer_id: Mapped[UUID] = mapped_column(ref("users"), index=True)
@@ -211,18 +219,38 @@ class ApprovalRecordRow(Row):
 
 class BehaviourEventRow(Row):
     __tablename__ = "behaviour_events"
-    __table_args__ = (Index("ix_behaviour_events_agent_time", "agent_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_behaviour_events_agent_time", "agent_id", "created_at"),
+        Index("ix_behaviour_events_agent_reason_observed", "agent_id", "reason_code", "observed_at"),
+        Index("ix_behaviour_events_scope_type_observed", "agent_id", "session_id", "task_id", "event_type",
+              "observed_at"),
+        Index("ix_behaviour_events_agent_request", "agent_id", "request_id"),
+    )
 
     agent_id: Mapped[UUID] = mapped_column(ref("agents"))
     event_type: Mapped[str]
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    request_id: Mapped[UUID | None]
+    session_id: Mapped[UUID | None]
+    task_id: Mapped[UUID | None]
+    action: Mapped[str | None]
+    reason_code: Mapped[str | None]
+    band: Mapped[str | None]
+    reviewer_id: Mapped[UUID | None] = mapped_column(ref("users"))
 
 
 class TrustScoreRow(Row):
     __tablename__ = "trust_scores"
-    __table_args__ = (CheckConstraint("score BETWEEN 0 AND 100", name="score"),)
+    __table_args__ = (
+        CheckConstraint("score BETWEEN 0 AND 100", name="score"),
+        CheckConstraint("compliant_count >= 0", name="compliant_count"),
+    )
 
     agent_id: Mapped[UUID] = mapped_column(ref("agents"), unique=True)
     score: Mapped[int]
+    compliant_count: Mapped[int] = mapped_column(server_default="0")
+    last_adjusted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_violation_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TrustEventRow(Row):
@@ -232,27 +260,50 @@ class TrustEventRow(Row):
     agent_id: Mapped[UUID] = mapped_column(ref("agents"))
     delta: Mapped[int]
     reason_code: Mapped[str]
+    behaviour_event_id: Mapped[UUID | None] = mapped_column(ref("behaviour_events"), unique=True)
+    previous_score: Mapped[int | None]
+    new_score: Mapped[int | None]
+    rule: Mapped[str | None]
 
 
-class AuditLogRow(Row):
-    __tablename__ = "audit_logs"
-    __table_args__ = (Index("ix_audit_logs_agent_time", "agent_id", "created_at"),)
+class OperationRow(Row):
+    __abstract__ = True
 
     event_type: Mapped[str]
     agent_id: Mapped[UUID | None] = mapped_column(ref("agents"))
+    owner_id: Mapped[UUID | None]
+    actor_kind: Mapped[str | None]
+    actor_id: Mapped[UUID | None]
+    session_id: Mapped[UUID | None]
+    action: Mapped[str | None]
+    resource_id: Mapped[UUID | None]
+    request_id: Mapped[UUID | None]
+    outcome: Mapped[str | None]
+    reason: Mapped[str | None]
+    correlation_id: Mapped[UUID | None]
+
+
+class AuditLogRow(OperationRow):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_agent_time", "agent_id", "created_at"),
+        Index("ix_audit_logs_owner_time", "owner_id", "created_at", "id"),
+    )
+
     action_request_id: Mapped[UUID | None] = mapped_column(ref("action_requests"), index=True)
+    severity: Mapped[str | None]
 
 
-class SecurityEventRow(Row):
+class SecurityEventRow(OperationRow):
     __tablename__ = "security_events"
     __table_args__ = (
         Index("ix_security_events_agent_time", "agent_id", "created_at"),
+        Index("ix_security_events_owner_time", "owner_id", "created_at", "id"),
         CheckConstraint("severity IN ('info', 'warning', 'critical')", name="severity"),
     )
 
-    event_type: Mapped[str]
     severity: Mapped[str]
-    agent_id: Mapped[UUID | None] = mapped_column(ref("agents"))
+    audit_event_id: Mapped[UUID | None] = mapped_column(ref("audit_logs"))
 
 
 class IntegrationConnectionRow(Row):

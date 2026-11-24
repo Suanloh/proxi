@@ -108,6 +108,48 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Issues encountered:** Hosted deployment and production owner authentication were not tested; the API uses the local owner bearer.
 - **Next task:** Stop at Prompt 07. Await authorization to implement deterministic RBAC/ABAC evaluation.
 
+## Prompt 08 — Authorization & Enforcement Engine
+
+- **Objective:** Centralize deterministic decisions and enforce them independently of integrations.
+- **Implemented:** Normalized action requests, ordered security checks, JWT-bound check endpoint, and synchronous adapter dispatch after fresh authorization under the agent lock.
+- **Verified:** 53 backend tests passed on disposable PostgreSQL 18.7, including migration round-trip and revocation between checks. Alembic found no schema drift.
+- **Remaining:** The controller requires an injected decision recorder. No production audit sink, action approval interface, browser/MCP adapter, or hosted rollout was added.
+- **Next task:** Stop at Prompt 08 and await further instructions.
+
+## Prompt 09 — Human Approval System
+
+- **Objective:** Make enforcement holds reviewable without granting unconditional execution authority.
+- **Implemented:** Persisted action and policy-gate snapshots, owner-only review and history, and durable single-use claims before fresh authorization. See the [approval API](../docs/API.md#action-approvals) and [revision 0006](../backend/migrations/versions/0006_action_approvals.py).
+- **Verified:** 61 backend tests passed on disposable PostgreSQL 18.7. Migration round-trip passed and Alembic found no schema drift. See [Prompt 09 verification](TEST_LOG.md#prompt-09).
+- **Stop point:** No trust scoring, dashboard UI, production execution adapter, or hosted rollout.
+
+## Prompt 10 — Behaviour Analysis & Dynamic Trust Engine
+
+- **Implemented:** Deterministic behaviour analysis, persisted evidence, configurable scores and bands, authorization restrictions, and controlled recovery. See the [trust rules and enforcement](../docs/SECURITY.md#behaviour-analysis-and-dynamic-trust) and [revision 0007](../backend/migrations/versions/0007_dynamic_trust.py).
+- **Verified:** 73 backend tests passed on disposable PostgreSQL 18.7. Migration round-trip passed and Alembic detected no schema drift. See [Prompt 10 verification](TEST_LOG.md#prompt-10).
+- **Stop point:** No dashboard visualizations, hosted rollout, or production executor.
+
+## Prompt 11 — Audit Logging & Security Monitoring
+
+- **Implemented:** Synchronous in-process events, transactional audit and security records, and [owner-only monitoring endpoints](../docs/API.md#audit-and-security-monitoring) with filtering and correlation. Added the event bus, monitoring service, API and schemas, and [revision 0008](../backend/migrations/versions/0008_security_monitoring.py); updated operation producers, mappings, tests, and documentation.
+- **Verified:** 75 backend tests passed on disposable PostgreSQL 18.7. Migration round-trip passed and Alembic detected no schema drift. See [Prompt 11 verification](TEST_LOG.md#prompt-11).
+- **Integrity:** Application interfaces are append-only. Privileged database or file access can bypass application controls; neither PostgreSQL nor SQLite history is independently tamper-evident. See the [security notes](../docs/SECURITY.md).
+- **Stop point:** No dashboard, external broker, hosted rollout, or production execution adapter. Wait for the next authorized prompt.
+
+## Prompt 12 — Playwright Browser Integration
+
+- **Implemented:** Added [browser API](../backend/app/api/browser.py), [browser schemas](../backend/app/schs/browser.py), and [Playwright adapter](../backend/app/integrations/browser/playwright.py). Updated the shared bearer binding and enforcement, app wiring, scope configuration, dependencies, tests, and documentation. No migration was added.
+- **Verified:** The [flight-fare demo](../docs/DEVELOPMENT.md#controlled-browser-demo) permitted navigation and approved reading, blocked scripted purchase and disclosure requests, and verified both blocks in owner-visible audit history. All 77 backend tests passed; the disposable database was stopped and removed. See [Prompt 12 verification](TEST_LOG.md#prompt-12).
+- **Security:** Only exact-page navigation and reading are supported. Fresh offline Chromium contexts do not share browser state. The demo shows policy enforcement, not general prompt-injection detection or protection for traffic that bypasses PROXI.
+- **Stop point:** No Chrome extension, live travel site test, or hosted rollout. Wait for the next authorized prompt.
+
+## Prompt 13 — MCP & Local Agent Integration
+
+- **Implemented:** Added [tool routes](../backend/app/api/integrations.py), [request and response schemas](../backend/app/schs/integrations.py), a [trusted integration registry](../backend/app/svcs/integrations.py), the [Python MCP SDK gateway](../backend/app/integrations/mcp/gateway.py), and a [local catalog adapter](../backend/app/integrations/local_agent/catalog.py). Updated startup wiring, configuration, dependencies, tests, and operator documentation. No database migration was added.
+- **Verified:** A real MCP SDK tool call and a local lookup returned the read-only catalog entry only after authorization. The tests confirmed that denial, out-of-scope requests, missing capability, session expiry, revocation, and pending approval did not dispatch. They also covered single-use approval and sanitized server failures. See [Prompt 13 verification](TEST_LOG.md#prompt-13).
+- **Security:** Both integrations start disabled, with fixed identity and resource scope. Tool descriptions do not affect authorization. Registry changes are process-local. No shell execution, unrestricted file access, generic MCP listener, or protection for out-of-gateway traffic.
+- **Stop point:** No other integrations, hosted rollout, or UI changes. Wait for the next explicitly authorized prompt.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).
