@@ -1,7 +1,7 @@
 # Current status
 
-- **Current prompt:** Prompt 14 — PROXI Dashboard & Frontend (`TESTING`; production build and browser smoke test passed; persisted end-to-end verification outstanding).
-- **Frontend checkpoint:** [Phase 07 — Frontend](phases/PHASE_07_FRONTEND.md). Verify against disposable PostgreSQL before marking complete.
+- **Latest completed prompt:** Prompt 14 — PROXI Dashboard & Frontend (`COMPLETE`; production build, browser smoke, focused PostgreSQL tests, and manual approval and session persistence checks passed).
+- **Frontend checkpoint:** [Phase 07 — Frontend](phases/PHASE_07_FRONTEND.md). Stop at Prompt 14 pending explicit authorization for further work.
 - **Integration checkpoint:** [Phase 05 — Browser Integration](phases/PHASE_05_BROWSER_INTEGRATION.md) (`COMPLETE`), with the Prompt 13 catalog follow-up recorded. Phase numbers are checkpoint IDs, not prompt numbers.
 - **Overall status:** `IN PROGRESS` — deterministic authorization, human review, guarded browser and catalog dispatch, and dynamic trust restrictions are available; no hosted rollout.
 - **Status vocabulary:** `NOT STARTED`, `IN PROGRESS`, `BLOCKED`, `TESTING`, `COMPLETE`. Use evidence rather than completion percentages.
@@ -21,7 +21,7 @@
 ## Functionality and handoff
 
 - **Working:** FastAPI liveness at `GET /api/v1/health`; the dashboard builds and renders all major screens against a loopback API fixture. See [verification](TEST_LOG.md) and [local run commands](../docs/DEVELOPMENT.md). Liveness does not establish readiness or protection.
-- **Known verification gaps:** Persisted dashboard and approval tests require disposable PostgreSQL. One existing backend browser renderer test failed in the broader run; the cause was not established. See the [known issues register](KNOWN_ISSUES.md) for previously tracked gaps.
+- **Dashboard verification:** Focused tests passed against disposable PostgreSQL, including the browser renderer test that failed in an earlier run for an unknown reason. The user confirmed approval and session persistence through the live dashboard. See the [test log](TEST_LOG.md#prompt-14) and the [known issues register](KNOWN_ISSUES.md).
 - **Hosted verification:** No migration or connection attempted against Supabase; hosted configuration was not supplied.
 - **Agent identity and access:** Lifecycle management requires the local owner bearer. The [access prerequisite check](../docs/API.md#agent-sessions-and-access-prerequisites) requires an active agent, active session, valid JWT, and matching capability. It does not authorize or execute operations; `last_seen_at` remains unset.
 - **Authorization:** The [JWT-bound check endpoint](../docs/API.md#authorization-check) returns `ALLOW`, `HOLD`, or `BLOCK` without executing anything. The controller rechecks authority before dispatching only `ALLOW` to a registered adapter.

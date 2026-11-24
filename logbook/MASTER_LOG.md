@@ -156,8 +156,8 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Implementation:** Built ten dashboard screens, owner sign-in, dark/light themes, audit filters, monitor refresh, and backend-backed management forms. Added four owner-scoped, non-cacheable backend dashboard reads.
 - **Files:** Added dashboard frontend features, route, loading UI, shared controls and contracts, smoke test, and backend dashboard router, service, and schemas. Updated integration status support, backend tests, API and development docs, and the [frontend checkpoint](phases/PHASE_07_FRONTEND.md).
 - **Security:** The owner bearer stays in an HttpOnly cookie and is forwarded server side. React does not authorize actions. Dashboard approvals never dispatch; the backend revalidates a later retry. Integration connectivity is reported as unknown without probes.
-- **Result:** `TESTING`. Production build and frontend loopback browser smoke passed. Focused backend checks passed where runnable; persisted verification and one earlier backend browser renderer failure are recorded in the [test log](TEST_LOG.md#prompt-14).
-- **Stop point:** Verify persisted reads and writes using disposable PostgreSQL before acceptance. No dedicated browser launcher or Chrome extension; wait for explicit authorization.
+- **Result:** `COMPLETE`. Production build and frontend loopback browser smoke passed. All 16 focused PostgreSQL tests passed. On 2026-11-25, the user confirmed approval review and session revocation both persisted after reloading the live dashboard. See the [test log](TEST_LOG.md#prompt-14).
+- **Stop point:** Prompt 14 is complete. No dedicated browser launcher or Chrome extension; wait for explicit authorization.
 
 ## Entry template
 

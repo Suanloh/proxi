@@ -665,7 +665,8 @@ def test_dashboard_reads_are_owner_scoped_and_follow_session_state(
     url = migrated.engine.url.difference_update_query(["hostaddr"])
     token = token_hex(32)
     settings = Settings(env="testing", test_database_url=SecretStr(url.render_as_string(hide_password=False)),
-                        dev_identity_owner_id=case.owner_id, dev_identity_token=SecretStr(token))
+                        credential_signing_key=case.signing_key, dev_identity_owner_id=case.owner_id,
+                        dev_identity_token=SecretStr(token))
     base = "/api/v1/dashboard"
     with TestClient(create_app(settings), headers={"Authorization": f"Bearer {token}"}) as client:
         overview = client.get(f"{base}/overview")

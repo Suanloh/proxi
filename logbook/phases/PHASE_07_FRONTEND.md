@@ -1,6 +1,6 @@
 # Phase 07 — Frontend
 
-**Status:** TESTING
+**Status:** COMPLETE
 
 ## Implementation record
 
@@ -8,8 +8,8 @@ Prompt 14 added overview, agent inventory and details, policy management, approv
 
 ## Verification
 
-Production build, TypeScript, and the browser smoke test against a loopback API fixture passed. The [test log](../TEST_LOG.md#prompt-14) records the persisted verification gap and browser renderer regression result. The project `.env`, shared databases, and hosted services were not used for verification.
+Production build, TypeScript, and the browser smoke test against a loopback API fixture passed. All 16 focused PostgreSQL tests passed. The user also confirmed that approval review and session revocation persisted after reloading the live dashboard backed by FastAPI and disposable PostgreSQL. See the [test log](../TEST_LOG.md#prompt-14) for the scope and results.
 
 ## Next handoff
 
-Verify dashboard reads and owner operations with disposable PostgreSQL before marking Prompt 14 complete. No dedicated browser launcher or Chrome extension was added. Wait for explicit authorization.
+Stop at Prompt 14. No dedicated browser launcher or Chrome extension was added; both are outside this prompt’s scope. Wait for explicit authorization before starting further work.
