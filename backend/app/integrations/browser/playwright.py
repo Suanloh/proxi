@@ -39,6 +39,10 @@ class PlaywrightBrowser:
         self._allowed = frozenset(allowed_pages)
         self._denied = frozenset(denied_pages)
 
+    @property
+    def has_allowed_pages(self) -> bool:
+        return not self._allowed.issubset(self._denied)
+
     def restriction(self, request: ActionRequest) -> Reason | None:
         if request.action not in SUPPORTED_ACTIONS:
             return Reason.ADAPTER_UNAVAILABLE

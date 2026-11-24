@@ -105,6 +105,8 @@ npm.cmd ci
 npm.cmd run dev
 ```
 
-Open `http://127.0.0.1:3000`. The placeholder page starts independently of the backend. When used by server-side code, the API client defaults to `http://127.0.0.1:8000/api/v1`; set `PROXI_API_BASE_URL` in `frontend/.env.local` or the process to override it. Do not use the `NEXT_PUBLIC_` prefix. In a separate check, use `npm.cmd run build` for production compilation and TypeScript validation, then `npm.cmd run start` to serve that build.
+Open `http://127.0.0.1:3000` and sign in with the local development owner token configured above. The dashboard needs a migrated local database and an active stored owner. The server-side API client defaults to `http://127.0.0.1:8000/api/v1`; override it with `PROXI_API_BASE_URL` in `frontend/.env.local` or the frontend process. Do not use the `NEXT_PUBLIC_` prefix. The frontend stores the token in an HttpOnly, SameSite Strict session cookie; set `PROXI_SECURE_COOKIES=true` for HTTPS. This is local development authentication, not production sign-in. Operations that show a confirmation require JavaScript.
 
-Tailwind and shadcn/ui are configured; there are no generated UI components yet. See the [UI guidelines](frontend/UI_GUIDELINES.md), [component architecture](frontend/COMPONENT_ARCHITECTURE.md), [screen hierarchy](frontend/SCREEN_HIERARCHY.md), and [UI roadmap](frontend/FUTURE_UI_ROADMAP.md) before adding screens.
+Run `npm.cmd run build` for production compilation and TypeScript validation, then `npm.cmd run start` to serve that build. To run the dashboard smoke test after building, run `npx.cmd playwright install chromium` and `npm.cmd test`. Alternatively, set `PROXI_TEST_BROWSER_CHANNEL=msedge` or `chrome` to use an already installed browser. The test starts a separate Next server and a fixture API on loopback ports. It does not use the project database or an owner credential from the environment.
+
+See the [UI guidelines](frontend/UI_GUIDELINES.md), [component architecture](frontend/COMPONENT_ARCHITECTURE.md), and [screen hierarchy](frontend/SCREEN_HIERARCHY.md) for layout and component guidance.

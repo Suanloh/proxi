@@ -652,6 +652,43 @@ def authorization_case(migrated: Database) -> AuthorizationCase:
     return AuthorizationCase(request, owner.id, source.id, cap.id, key, token)
 
 
+def test_dashboard_reads_are_owner_scoped_and_follow_session_state(
+    migrated: Database, authorization_case: AuthorizationCase,
+) -> None:
+    case, request = authorization_case, authorization_case.request
+    with migrated.transaction() as session:
+        users = repository(session, r.User)
+        other = users.add(r.User(email="other-dashboard@example.test"))
+        identity = AgentIdentityService(agent_repository(session), users)
+        other_agent = identity.register(other.id, "Other dashboard agent", r.AgentType.LOCAL)
+        access_service(session, identity, JwtCredentialCodec(case.signing_key)).create_session(other.id, other_agent.id, 120)
+    url = migrated.engine.url.difference_update_query(["hostaddr"])
+    token = token_hex(32)
+    settings = Settings(env="testing", test_database_url=SecretStr(url.render_as_string(hide_password=False)),
+                        dev_identity_owner_id=case.owner_id, dev_identity_token=SecretStr(token))
+    base = "/api/v1/dashboard"
+    with TestClient(create_app(settings), headers={"Authorization": f"Bearer {token}"}) as client:
+        overview = client.get(f"{base}/overview")
+        assert overview.json() == {"active_sessions": 1, "pending_approvals": 0}
+        assert overview.headers["cache-control"] == "no-store"
+        assert client.get(f"{base}/agents/{other_agent.id}").status_code == 404
+        detail = f"{base}/agents/{request.agent_id}"
+        agent = client.get(detail).json()
+        assert [item["id"] for item in agent["sessions"]] == [str(request.session_id)]
+        assert [item["id"] for item in agent["capabilities"]] == [str(case.capability_id)]
+        assert [item["id"] for item in agent["tasks"]] == [str(request.task_id)]
+        assert not agent["trust"]["score_persisted"] and agent["trust"]["history"] == []
+        assert [(item["agent_id"], item["active_sessions"]) for item in client.get(f"{base}/trust").json()] == [
+            (str(request.agent_id), 1),
+        ]
+        assert {item["id"]: item["connection_status"] for item in client.get(f"{base}/integrations").json()} == {
+            "browser": "unknown", "mcp": "unknown", "local": "unknown",
+        }
+        assert client.post(f"/api/v1/agents/{request.agent_id}/sessions/{request.session_id}/revoke").status_code == 200
+        assert client.get(f"{base}/overview").json()["active_sessions"] == 0
+        assert client.get(detail).json()["sessions"][0]["status"] == "revoked"
+
+
 def test_monitoring_api_correlates_denials_and_limits_visibility(
     migrated: Database, authorization_case: AuthorizationCase,
 ) -> None:

@@ -113,3 +113,16 @@ Both routes require the configured owner bearer and an active stored owner. Resu
 Filters combine with AND: `since` (inclusive) and `until` (exclusive) accept timezone-aware timestamps; `agent_id`, `event_type`, `action`, `decision` (`ALLOW`, `HOLD`, `BLOCK`), `severity`, and `correlation_id` are exact matches. Results are newest first, with `limit` (1–100, default 50) and `offset` (0–10000, default 0).
 
 Use the server-generated `X-Correlation-ID` response header to find rows from a request. It is independent of the action's `request_id`; inbound correlation headers are ignored. A successful access prerequisite check is recorded separately from an authorization allowance or actual dispatch.
+
+## Dashboard reads
+
+These `GET` routes require the configured development owner bearer and an active stored owner. Successful responses have `Cache-Control: no-store`. Agent detail returns `404` for a missing or foreign agent.
+
+| Endpoint | Response |
+| --- | --- |
+| `/api/v1/dashboard/overview` | Owner's active session and pending approval counts. The dashboard combines these with the existing agent, monitoring, trust, and integration reads. |
+| `/api/v1/dashboard/agents/{agent_id}` | Sessions (without credentials), task and capability references, trust score and history, and current trust restrictions. |
+| `/api/v1/dashboard/trust` | Per-agent trust score, band, and active session count. `score_persisted` distinguishes persisted scores from the configured initial score. |
+| `/api/v1/dashboard/integrations` | Browser, MCP, and local-agent adapter configuration/registry status and supported operations. `connection_status` is `unknown`: no adapter is invoked or probed. |
+
+The dashboard writes through the existing owner endpoints. An approval records an owner decision; only the backend enforcement path can revalidate and dispatch a later retry.

@@ -11,6 +11,8 @@ from .api.agents import create_agents_router
 from .api.approvals import create_approval_router
 from .api.authz import create_authorization_router
 from .api.browser import create_browser_router
+from .api.dashboard import create_dashboard_router
+from .svcs.dashboard import DashboardQuery, integration_status
 from .api.errors import register_error_handlers
 from .api.health import router as health_router
 from .api.integrations import create_integration_router
@@ -180,6 +182,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             identity_service(session, request).require_active_owner(owner_id)
             yield EventQuery(session)
 
+    @contextmanager
+    def dashboard_transaction(request: Request) -> Iterator[tuple[DashboardQuery, AgentIdentityService]]:
+        db: Database | None = request.app.state.database
+        if db is None:
+            raise HTTPException(status_code=503)
+        with db.transaction() as session:
+            yield DashboardQuery(session, settings.trust_rules), identity_service(session, request)
+
     interpreter = IntentInterpreter(DeepSeekAdapter(
         settings.deepseek_api_key, settings.deepseek_model, settings.deepseek_timeout_seconds,
     ))
@@ -215,4 +225,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(create_approval_router(authenticate_owner, approval_transaction), prefix="/api/v1")
     app.include_router(create_trust_router(authenticate_owner, trust_transaction), prefix="/api/v1")
     app.include_router(create_monitoring_router(authenticate_owner, query_transaction), prefix="/api/v1")
+    app.include_router(create_dashboard_router(authenticate_owner, dashboard_transaction,
+                                               lambda: integration_status(browser, integrations)), prefix="/api/v1")
     return app

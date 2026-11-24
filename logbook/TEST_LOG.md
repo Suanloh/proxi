@@ -120,6 +120,14 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 - **Editor diagnostics and dependencies:** No errors reported for the eight changed Python files; `pip check` passed.
 - **Not run:** Hosted rollout or third-party MCP servers; both are outside this prompt's scope.
 
+## Prompt 14
+
+- **Frontend PASS:** From `frontend`, `npm.cmd run build`, then `$env:PROXI_TEST_BROWSER_CHANNEL='msedge'; npm.cmd test`. Build and TypeScript passed. The smoke test uses a built Next server and dedicated loopback API fixture. It covers all main screens, guest access, invalid sign-in, HttpOnly cookie issuance, audit query forwarding, fresh overview reads, confirmation cancellation, backend rejection errors, successful approval and refreshed state, and no dispatch request.
+- **Native approval form:** A synthetic multipart POST reached the fixture but timed out reading the response. Operations that require confirmation now intentionally require hydrated JavaScript; the real browser path passed, including cancellation. Native sign-in still passed.
+- **Focused backend:** From `backend`, `..\.venv\Scripts\python.exe -m pytest -q app\tests -k 'dashboard or approval'` with `PROXI_ENV=testing` and other inherited `PROXI_*` variables cleared: 2 passed, 13 skipped, 72 deselected.
+- **Earlier backend regression:** `..\.venv\Scripts\python.exe -m pytest -q app\tests` in isolated testing mode before adding persisted dashboard coverage: 34 passed, 51 skipped, 1 failed (`test_browser_renderer_is_offline_and_does_not_follow_redirects`, `BrowserExecutionError`). Cause not established during this prompt.
+- **NOT RUN:** PostgreSQL-backed tests and dashboard verification against persisted data. No disposable database URL was available; no project `.env`, shared database, or hosted service was used.
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

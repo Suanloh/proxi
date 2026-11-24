@@ -150,6 +150,15 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Security:** Both integrations start disabled, with fixed identity and resource scope. Tool descriptions do not affect authorization. Registry changes are process-local. No shell execution, unrestricted file access, generic MCP listener, or protection for out-of-gateway traffic.
 - **Stop point:** No other integrations, hosted rollout, or UI changes. Wait for the next explicitly authorized prompt.
 
+## Prompt 14 — PROXI Dashboard & Frontend
+
+- **Date:** 2026-11-24.
+- **Implementation:** Built ten dashboard screens, owner sign-in, dark/light themes, audit filters, monitor refresh, and backend-backed management forms. Added four owner-scoped, non-cacheable backend dashboard reads.
+- **Files:** Added dashboard frontend features, route, loading UI, shared controls and contracts, smoke test, and backend dashboard router, service, and schemas. Updated integration status support, backend tests, API and development docs, and the [frontend checkpoint](phases/PHASE_07_FRONTEND.md).
+- **Security:** The owner bearer stays in an HttpOnly cookie and is forwarded server side. React does not authorize actions. Dashboard approvals never dispatch; the backend revalidates a later retry. Integration connectivity is reported as unknown without probes.
+- **Result:** `TESTING`. Production build and frontend loopback browser smoke passed. Focused backend checks passed where runnable; persisted verification and one earlier backend browser renderer failure are recorded in the [test log](TEST_LOG.md#prompt-14).
+- **Stop point:** Verify persisted reads and writes using disposable PostgreSQL before acceptance. No dedicated browser launcher or Chrome extension; wait for explicit authorization.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).
