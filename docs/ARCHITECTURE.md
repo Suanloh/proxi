@@ -56,3 +56,5 @@ The owner submits a non-sensitive task for interpretation. The DeepSeek adapter 
 3. Deterministic policy yields `ALLOW`, `HOLD` or `BLOCK`. Hard denies cannot be overridden by trust or approval. `HOLD` means nothing executed.
 4. Before executing an approved action, revalidate authorization, revocations, session expiry and resource scope. The executor applies least privilege, including explicit restrictions for local file and system operations.
 5. Record decisions, execution outcomes and relevant security events without embedding credentials or sensitive input. Integrations that bypass the pipeline are not protected.
+
+The [controlled Playwright browser](API.md#controlled-browser) implements this flow for exact-page navigation and reading. MCP and local-agent execution remain planned.

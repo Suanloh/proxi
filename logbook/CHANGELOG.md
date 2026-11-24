@@ -74,6 +74,12 @@ Newest prompt first. Describe actual changes, not planned work. Record test outc
 - **Security:** Provider output remains advisory, and only explicit owner approval of a pending version can activate it. No authorization pipeline was added.
 - **Testing:** 36 backend tests passed; Alembic reported no drift. See [verification](TEST_LOG.md#prompt-07).
 
+## Prompt 12 — Playwright Browser Integration
+
+- **Added:** [Controlled browser API](../docs/API.md#controlled-browser) for agent-bound navigation and reading, plus a reproducible [flight-fare demo](../docs/DEVELOPMENT.md#controlled-browser-demo).
+- **Security:** Exact-page allow/deny scopes, isolated offline rendering, single-use approval retries, and correlated audit records. Click, fill, and download are unsupported.
+- **Testing:** 77 backend tests passed with real Chromium and disposable PostgreSQL. See [verification](TEST_LOG.md#prompt-12).
+
 ## Entry template
 
 - **Added:** New capabilities or docs.

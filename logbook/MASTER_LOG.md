@@ -136,6 +136,13 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Integrity:** Application interfaces are append-only. Privileged database or file access can bypass application controls; neither PostgreSQL nor SQLite history is independently tamper-evident. See the [security notes](../docs/SECURITY.md).
 - **Stop point:** No dashboard, external broker, hosted rollout, or production execution adapter. Wait for the next authorized prompt.
 
+## Prompt 12 — Playwright Browser Integration
+
+- **Implemented:** Added [browser API](../backend/app/api/browser.py), [browser schemas](../backend/app/schs/browser.py), and [Playwright adapter](../backend/app/integrations/browser/playwright.py). Updated the shared bearer binding and enforcement, app wiring, scope configuration, dependencies, tests, and documentation. No migration was added.
+- **Verified:** The [flight-fare demo](../docs/DEVELOPMENT.md#controlled-browser-demo) permitted navigation and approved reading, blocked scripted purchase and disclosure requests, and verified both blocks in owner-visible audit history. All 77 backend tests passed; the disposable database was stopped and removed. See [Prompt 12 verification](TEST_LOG.md#prompt-12).
+- **Security:** Only exact-page navigation and reading are supported. Fresh offline Chromium contexts do not share browser state. The demo shows policy enforcement, not general prompt-injection detection or protection for traffic that bypasses PROXI.
+- **Stop point:** No Chrome extension, live travel site test, or hosted rollout. Wait for the next authorized prompt.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

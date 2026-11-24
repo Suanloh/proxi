@@ -26,9 +26,15 @@ The engine evaluates, in order:
 
 The first failing check determines the reason. Policy ID order breaks ties for decision attribution, not for permission precedence. Trust can add restrictions but cannot bypass a denial or satisfy an approval.
 
-The controller accepts only explicitly registered integration/action adapters. Before synchronous dispatch it evaluates again in a fresh transaction, calls the required decision recorder, and holds the agent row lock through dispatch. Agent, session, credential, capability, and policy lifecycle mutations share that lock; policy mutations that change active authority take it before the policy lock. The recorder must be synchronous, must not re-enter these mutations, and must not log credentials or raw parameters. If recording fails, dispatch does not start. The controller accepts an injected recorder; no production audit sink is wired yet.
+The controller accepts only explicitly registered integration/action adapters. Before synchronous dispatch it evaluates again in a fresh transaction, calls the required decision recorder, and holds the agent row lock through dispatch. Agent, session, credential, capability, and policy lifecycle mutations share that lock; policy mutations that change active authority take it before the policy lock. The recorder must be synchronous, must not re-enter these mutations, and must not log credentials or raw parameters. If recording fails, dispatch does not start. The controller accepts an injected recorder. The browser API uses transaction-scoped decision and execution events for persistent audit history; it has no independent pre-dispatch audit sink.
 
-Adapters must execute the exact authorized action and resource, validate action-specific parameters, and finish without scheduling deferred work. A `HOLD`, `BLOCK`, or missing adapter does not dispatch. No browser or MCP executor is registered, and the [check endpoint](API.md#authorization-check) never dispatches.
+Adapters must execute the exact authorized action and resource, validate action-specific parameters, and finish without scheduling deferred work. A `HOLD`, `BLOCK`, or missing adapter does not dispatch. The [browser endpoint](API.md#controlled-browser) dispatches only navigation and reading; the [check endpoint](API.md#authorization-check) never dispatches. No MCP executor is registered.
+
+### Controlled browser boundary
+
+A browser operation requires a credential bound to its agent and session, a matching capability, policy permission, and an exact server-allowed page. A deny-list match wins. Every execution starts a fresh offline, sandboxed Chromium context with scripts, service workers, downloads, and subresource requests disabled. No browser handle or stored browser state is available to the agent. Only one credential-free GET to the exact page is made outside Chromium; redirects are not followed. The response must be bounded HTML. Extracted title and text remain untrusted data: page instructions cannot change policy, grants, consent, or approval state.
+
+A GET is not proof of a read-only server operation. Allowlist only trusted, read-only endpoints; enforce deployment egress controls for private addresses, DNS changes, and other unintended destinations. The adapter does not detect all prompt injection, constrain clients that bypass PROXI, or verify the behaviour of remote servers.
 
 ### Behaviour analysis and dynamic trust
 

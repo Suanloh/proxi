@@ -6,9 +6,34 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..core.creds.tokens import CredentialClaims, CredentialCodec, ExpiredCredential, InvalidCredential
-from ..schs.authz import AuthorizationCheck, Decision
+from ..schs.authz import ActionRequest, AuthorizationCheck, Decision
 from ..svcs.authz import AuthorizationEngine
 from .owner_auth import bearer_required
+
+
+def bound_agent_token(
+    credentials: HTTPAuthorizationCredentials | None, codec: CredentialCodec | None,
+    action: ActionRequest, record_denial: Callable[[CredentialClaims | None], None],
+) -> str:
+    if credentials is None or len(credentials.credentials) > 2048:
+        record_denial(None)
+        raise bearer_required()
+    if codec is None:
+        raise HTTPException(status_code=503)
+    token = credentials.credentials
+    expected = (action.agent_id, action.session_id)
+    try:
+        claims = codec.decode(token)
+    except ExpiredCredential as exc:
+        record_denial(exc.claims if (exc.claims.agent_id, exc.claims.session_id) == expected else None)
+        raise bearer_required() from None
+    except InvalidCredential:
+        record_denial(None)
+        raise bearer_required() from None
+    if (claims.agent_id, claims.session_id) != expected:
+        record_denial(None)
+        raise bearer_required()
+    return token
 
 
 def create_authorization_router(
@@ -24,24 +49,7 @@ def create_authorization_router(
         body: AuthorizationCheck, request: Request, response: Response,
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     ) -> Decision:
-        if credentials is None or len(credentials.credentials) > 2048:
-            record_denial(request, None)
-            raise bearer_required()
-        if codec is None:
-            raise HTTPException(status_code=503)
-        token = credentials.credentials
-        try:
-            claims = codec.decode(token)
-        except ExpiredCredential as exc:
-            bound = (exc.claims.agent_id, exc.claims.session_id) == (body.request.agent_id, body.request.session_id)
-            record_denial(request, exc.claims if bound else None)
-            raise bearer_required() from None
-        except InvalidCredential:
-            record_denial(request, None)
-            raise bearer_required() from None
-        if (claims.agent_id, claims.session_id) != (body.request.agent_id, body.request.session_id):
-            record_denial(request, None)
-            raise bearer_required()
+        token = bound_agent_token(credentials, codec, body.request, lambda claims: record_denial(request, claims))
         response.headers["Cache-Control"] = "no-store"
         with transaction(request) as engine:
             return engine.evaluate(body.request, token, body.capability_id)

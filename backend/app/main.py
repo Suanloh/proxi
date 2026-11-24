@@ -10,6 +10,7 @@ from .api.access import create_access_router
 from .api.agents import create_agents_router
 from .api.approvals import create_approval_router
 from .api.authz import create_authorization_router
+from .api.browser import create_browser_router
 from .api.errors import register_error_handlers
 from .api.health import router as health_router
 from .api.intent import create_intent_router
@@ -27,6 +28,7 @@ from .infra.llm.deepseek import DeepSeekAdapter
 from .infra.repos.approvals import approval_repository
 from .infra.repos.sqlalchemy import agent_repository, mutable_repository, policy_repository, repository
 from .infra.repos.trust import SqlTrustHistory
+from .integrations.browser.playwright import PlaywrightBrowser
 from .logging_config import configure_logging
 from .models.records import AgentSession, Capability, Credential, IntentInterpretation, Task, User
 from .svcs.access import AgentAccessService
@@ -191,6 +193,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(create_agents_router(authenticate_owner, identity_transaction), prefix="/api/v1")
     app.include_router(create_access_router(authenticate_owner, access_transaction, record_credential_denial), prefix="/api/v1")
     app.include_router(create_authorization_router(codec, authorization_check_transaction, record_credential_denial), prefix="/api/v1")
+    browser = PlaywrightBrowser(settings.browser_allowed_pages, settings.browser_denied_pages)
+    app.include_router(create_browser_router(browser, codec, authorization_check_transaction,
+                                             record_credential_denial), prefix="/api/v1")
     app.include_router(create_intent_router(authenticate_owner, intent_transaction, interpreter), prefix="/api/v1")
     app.include_router(create_policy_router(authenticate_owner, policy_transaction), prefix="/api/v1")
     app.include_router(create_approval_router(authenticate_owner, approval_transaction), prefix="/api/v1")

@@ -59,6 +59,17 @@ Unknown or out-of-scope resources return `404`; invalid transitions, stale or un
 
 The endpoint returns HTTP `200` with `request_id`, `outcome` (`ALLOW`, `HOLD`, or `BLOCK`), `reason`, `failed_checks`, `matched_policy` (policy ID and version identifiers, when applicable), and `required_approval` for a hold. Missing, invalid, expired, or mismatched JWTs receive `401` before evaluation; the engine checks stored credential state again. The database and signing key must be configured. Responses with decisions are not cached. This endpoint does not accept trusted context, execute the action, or create an approval request. An `ALLOW` is not reusable execution authority. See [authorization and enforcement](SECURITY.md#authorization-and-enforcement).
 
+## Controlled browser
+
+`POST /api/v1/browser/actions` requires an agent JWT for the supplied `agent_id` and `session_id`. Submit `request_id`, `agent_id`, `session_id`, `task_id`, `capability_id` (UUIDs), `action`, `url` and a timezone-aware `timestamp`.
+
+- `browser.navigate` fetches and renders the page, returning its URL and title. `browser.read` fetches it afresh and also returns bounded body text. Neither retains browser state. Other browser actions, including click, fill and download, cannot execute.
+- Configure `PROXI_BROWSER_ALLOWED_PAGES` and `PROXI_BROWSER_DENIED_PAGES` as JSON arrays of exact URLs. The default empty allowlist blocks all pages and the denylist takes precedence. Use the same canonical URL in the capability, policy and request. URLs must use HTTPS with a DNS hostname (HTTP is also accepted on `127.0.0.1` for local demos) and cannot contain credentials, escaped characters, query strings or fragments.
+- Responses include `decision`, `executed`, `approval_id` and `result`. `BLOCK` and `HOLD` have no page result. To continue a hold, the owner approves via the [approval API](#action-approvals), then the agent retries the same payload, including its request ID and timestamp. An adapter failure returns `502` without page/provider details.
+- Decision and dispatch events are visible to the owner by `X-Correlation-ID` in [audit logs](#audit-and-security-monitoring). Page text is untrusted and is never treated as approval.
+
+See the [local flight demo](DEVELOPMENT.md#controlled-browser-demo) and [security boundary](SECURITY.md#controlled-browser-boundary).
+
 ## Action approvals
 
 The enforcement controller persists a `HOLD` and returns an approval ID equal to the action's request UUID. The authorization check does not create holds. These endpoints require the local owner bearer, not an agent JWT, and only expose the owner's approvals.

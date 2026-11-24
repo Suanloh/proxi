@@ -106,6 +106,13 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 - **Schema:** Revision `0008` round-tripped in the suite. From `backend`, `..\.venv\Scripts\python.exe -m alembic upgrade head` and `..\.venv\Scripts\python.exe -m alembic check` passed with no new upgrade operations detected. Both runs used `PROXI_ENV=testing` and a disposable loopback DSN.
 - **Not run:** Hosted rollout and production execution adapter tests; validation used local PostgreSQL and test adapters. SQLite is not a supported backend; its integrity limits are documented.
 
+## Prompt 12
+
+- **Focused browser tests:** From `backend`, `..\.venv\Scripts\python.exe -m pytest app\tests\test_database.py -k browser -q` — 2 passed, 51 deselected in 7.88 s. Covers navigation, approvals and single-use retry, prohibited purchase and disclosure, denylist precedence, missing capability, cross-agent binding, session revocation, sanitized execution failure, and correlated audit events. The loopback fixture confirms no redirect or subresource requests.
+- **Backend regression:** From `backend`, `..\.venv\Scripts\python.exe -m pytest -q app\tests --tb=short` — 77 passed in 44.26 s using Chromium and disposable PostgreSQL 17.9. The run used `PROXI_ENV=testing`, a loopback `PROXI_TEST_DATABASE_URL`, and the workspace `PLAYWRIGHT_BROWSERS_PATH`. PostgreSQL was stopped and its temporary directory removed.
+- **Editor diagnostics:** No errors reported for the eight changed Python files.
+- **Not run:** Live travel sites, hosted rollout, and browser UI. No migrations or Chrome extension were introduced.
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

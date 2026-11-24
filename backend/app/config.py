@@ -7,6 +7,7 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .core.trust.rules import TrustRules
+from .schs.browser import PageURL
 
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -28,6 +29,8 @@ class Settings(BaseSettings):
     deepseek_model: Annotated[str, Field(max_length=100, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")] = "deepseek-flash"
     deepseek_timeout_seconds: Annotated[float, Field(gt=0, le=120)] = 20.0
     trust_rules: TrustRules = Field(default_factory=TrustRules)
+    browser_allowed_pages: tuple[PageURL, ...] = ()
+    browser_denied_pages: tuple[PageURL, ...] = ()
 
     @field_validator("credential_signing_key")
     @classmethod

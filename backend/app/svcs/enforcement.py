@@ -28,14 +28,25 @@ class EnforcementController(Generic[T]):
     def __init__(
         self, transaction: AuthorizationTransaction, record_decision: Callable[[Decision], None],
         adapters: Mapping[tuple[AgentType, str], Callable[[ActionRequest], T]],
+        *, restriction: Callable[[ActionRequest], Reason | None] | None = None,
     ) -> None:
         self._transaction = transaction
+        self._restriction = restriction
         self._record = record_decision
         self._adapters = dict(adapters)
         for adapter in self._adapters.values():
             for target in (adapter, getattr(adapter, "__call__", None)):
                 if iscoroutinefunction(target) or isasyncgenfunction(target) or isgeneratorfunction(target):
                     raise TypeError("Execution adapters must run synchronously without deferring work")
+
+    def _restrict(self, request: ActionRequest, decision: Decision) -> Decision:
+        if decision.outcome == Outcome.BLOCK or self._restriction is None:
+            return decision
+        reason = self._restriction(request.model_copy(deep=True))
+        if reason is None:
+            return decision
+        return Decision(request_id=request.request_id, outcome=Outcome.BLOCK, reason=reason,
+                        failed_checks=(reason,), matched_policy=decision.matched_policy)
 
     @enforcement_correlation()
     def enforce(
@@ -47,6 +58,7 @@ class EnforcementController(Generic[T]):
         with self._transaction() as engine:
             context = trusted_context() if trusted_context else None
             decision = engine.evaluate(snapshot, token, capability_id, trusted_context=context, _audit=False)
+            decision = self._restrict(snapshot, decision)
             if engine.approvals is None:
                 raise RuntimeError("Enforcement requires an approval repository")
             decision, approval_id, claim = engine.approvals.prepare(snapshot, capability_id, decision,
@@ -71,6 +83,7 @@ class EnforcementController(Generic[T]):
             context = trusted_context() if trusted_context else None
             decision = engine.evaluate(snapshot, token, capability_id, trusted_context=context, _claim=claim,
                                        _dispatch=True, _audit=False)
+            decision = self._restrict(snapshot, decision)
             if claim is None:
                 if engine.approvals is None:
                     raise RuntimeError("Enforcement requires an approval repository")

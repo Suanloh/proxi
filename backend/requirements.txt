@@ -6,3 +6,4 @@ alembic>=1.14,<2
 psycopg[binary]>=3.2,<4
 PyJWT>=2.12,<3
 httpx2>=2,<3
+playwright>=1.60,<2
