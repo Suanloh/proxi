@@ -150,6 +150,22 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Security:** Both integrations start disabled, with fixed identity and resource scope. Tool descriptions do not affect authorization. Registry changes are process-local. No shell execution, unrestricted file access, generic MCP listener, or protection for out-of-gateway traffic.
 - **Stop point:** No other integrations, hosted rollout, or UI changes. Wait for the next explicitly authorized prompt.
 
+## Prompt 14 — PROXI Dashboard & Frontend
+
+- **Date:** 2026-11-24.
+- **Implementation:** Built ten dashboard screens, owner sign-in, dark/light themes, audit filters, monitor refresh, and backend-backed management forms. Added four owner-scoped, non-cacheable backend dashboard reads.
+- **Files:** Added dashboard frontend features, route, loading UI, shared controls and contracts, smoke test, and backend dashboard router, service, and schemas. Updated integration status support, backend tests, API and development docs, and the [frontend checkpoint](phases/PHASE_07_FRONTEND.md).
+- **Security:** The owner bearer stays in an HttpOnly cookie and is forwarded server side. React does not authorize actions. Dashboard approvals never dispatch; the backend revalidates a later retry. Integration connectivity is reported as unknown without probes.
+- **Result:** `COMPLETE`. Production build and frontend loopback browser smoke passed. All 16 focused PostgreSQL tests passed. On 2026-11-25, the user confirmed approval review and session revocation both persisted after reloading the live dashboard. See the [test log](TEST_LOG.md#prompt-14).
+- **Stop point:** Prompt 14 is complete. No dedicated browser launcher or Chrome extension; wait for explicit authorization.
+
+## Prompt 15 — PROXI Browser & Chrome Extension
+
+- **Date:** 2026-11-25.
+- **Implementation:** Isolated Playwright console bound to a browser agent, session, and task. Existing backend enforcement remains the only browser dispatch path. Added a read-only MV3 companion for local adapter status and scoped browser events, with short-lived pairing and dashboard access.
+- **Verification:** 21 passed, 52 skipped in the targeted backend run. Real Chromium console, unpacked extension service worker and loopback pairing/status, and offline renderer passed. The PostgreSQL workspace and approval assertions were added but skipped without a disposable test DSN.
+- **Stop point:** Prompt 15 implementation is recorded in [the test log](TEST_LOG.md#prompt-15). No claim of general Chrome monitoring or protection. Stop here; optional follow-up is the disposable PostgreSQL run.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

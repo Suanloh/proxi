@@ -1,25 +1,15 @@
 # Phase 07 — Frontend
 
-**Status:** IN PROGRESS
-
-This is a documentation checkpoint, not a numbered implementation prompt.
-
-## Scope
-
-Build the dashboard experience on the existing Next.js shell and integrate real backend data.
+**Status:** COMPLETE
 
 ## Implementation record
 
-The placeholder, reusable shell, skip link and system theme tokens are implemented and recorded under [Prompt 01.5](../MASTER_LOG.md#prompt-015--ui-foundation-and-future-enhancement-planning). Dashboard screens and data flows are not implemented.
-
-## Dependencies and blockers
-
-Dashboard flows need real API contracts; do not present mock data as working security features.
+Prompt 14 added overview, agent inventory and details, policy management, approvals, security monitoring, trust and risk, audit logs, integration status, and safe theme settings. The Next.js server reads owner-scoped backend records and submits mutations to the existing backend endpoints. Theme defaults to dark. Integration connectivity remains unknown because no probes are run. Approval records a decision without dispatching an action.
 
 ## Verification
 
-Shell checks are in the [test log](../TEST_LOG.md#prompt-015); native keyboard and dashboard flows are not verified.
+Production build, TypeScript, and the browser smoke test against a loopback API fixture passed. All 16 focused PostgreSQL tests passed. The user also confirmed that approval review and session revocation persisted after reloading the live dashboard backed by FastAPI and disposable PostgreSQL. See the [test log](../TEST_LOG.md#prompt-14) for the scope and results.
 
 ## Next handoff
 
-Consult the [UI roadmap](../../docs/frontend/FUTURE_UI_ROADMAP.md) when frontend work is authorized. See [current status](../CURRENT_STATUS.md) for the active handoff; wait for explicit authorization.
+Stop at Prompt 14. No dedicated browser launcher or Chrome extension was added; both are outside this prompt’s scope. Wait for explicit authorization before starting further work.

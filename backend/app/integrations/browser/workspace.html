@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+<title>PROXI Browser</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui;background:#111827;color:#e5edf7}body{max-width:1080px;margin:2rem auto;padding:0 1rem}
+h1,h2,p{margin:.5rem 0}h2{font-size:1rem;color:#a5b4fc}section{border:1px solid #45546d;padding:1rem;border-radius:.65rem;margin:1rem 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,25rem),1fr));gap:1rem}.grid section{margin:0}
+select,button{font:inherit;padding:.45rem;margin:.3rem 0;max-width:100%}button:not(:disabled){cursor:pointer}
+pre{white-space:pre-wrap;overflow-wrap:anywhere}li{margin:.35rem 0;overflow-wrap:anywhere}dd{margin:0 0 .45rem;overflow-wrap:anywhere}dt{font-weight:600}
+</style>
+<h1>PROXI Browser</h1>
+<p>Isolated console · exact-page navigation and reading only · no personal profile</p>
+<section aria-label="Workspace status">
+  <p id="connection" role="status">Connecting to local PROXI…</p>
+  <dl><dt>Protection</dt><dd id="protection">Unknown</dd><dt>Active agent</dt><dd id="agent">—</dd>
+  <dt>Session</dt><dd id="session">—</dd><dt>Current task</dt><dd id="task">—</dd></dl>
+  <label for="capability">Agent operation</label><br><select id="capability" disabled></select><br>
+  <button id="execute" disabled>Submit to PROXI</button> <button id="retry" disabled>Retry held request</button> <button id="stop">Stop console</button>
+  <p id="notice" role="status"></p>
+</section>
+<div class="grid">
+  <section><h2>Current website (last successful action)</h2><p id="website">No page rendered.</p><pre id="pageText"></pre></section>
+  <section><h2>Pending approvals for this task</h2><p>Review in the local dashboard’s Approval centre, then retry here.</p><ul id="approvals"></ul>
+  <h2>Recent session actions and security notifications</h2><ul id="events"></ul></section>
+</div>
+<script>
+const el = (id) => document.getElementById(id);
+const label = {ActionAllowed:'Allowed', ActionHeld:'Approval required', ActionBlocked:'Blocked', ActionExecuted:'Executed',
+  CapabilityRevoked:'Capability revoked', SessionRevoked:'Agent session revoked', AuthenticationDenied:'Authentication denied',
+  PolicyViolation:'Security notification: policy violation', CapabilityViolation:'Security notification: capability violation',
+  SuspiciousBehaviour:'Security notification: suspicious behaviour', RepeatedDeniedOperations:'Security notification: repeated denials'};
+let busy = false;
+function list(id, entries, empty) {
+  el(id).replaceChildren(...(entries.length ? entries : [empty]).map(text => {
+    const li = document.createElement('li'); li.textContent = text; return li;
+  }));
+}
+async function refresh() {
+  const reply = await proxi('status');
+  const s = reply.status;
+  el('connection').textContent = s ? 'Connected to local PROXI' : reply.error;
+  el('protection').textContent = !s ? 'Unavailable' : s.configured ? 'Backend enforcement for supported operations only' : 'Browser adapter not configured';
+  if (!s) {
+    el('capability').disabled = el('execute').disabled = el('retry').disabled = true;
+    el('session').textContent = 'Unavailable';
+    list('approvals', [], 'Status unavailable.');
+    return;
+  }
+  el('agent').textContent = `${s.agent_name} (${s.agent_status})`;
+  el('session').textContent = s.session_status === 'expired' ? 'Agent session expired' : s.session_status;
+  el('task').textContent = `${s.task_name} (${s.task_status})`;
+  const selected = el('capability').value;
+  el('capability').replaceChildren(...s.capabilities.map(cap => new Option(`${cap.action} · ${cap.resource}`, cap.id)));
+  if (s.capabilities.some(cap => cap.id === selected)) el('capability').value = selected;
+  const active = s.configured && s.session_status === 'active' && s.agent_status === 'active' && s.task_status === 'pending';
+  el('capability').disabled = el('execute').disabled = !active || !s.capabilities.length;
+  el('retry').disabled = !active || !reply.retry;
+  list('approvals', s.pending_approvals.map(a => `${a.action} · ${a.id} · expires ${new Date(a.expires_at).toLocaleTimeString()}`), 'None pending.');
+  list('events', s.events.map(e => `${new Date(e.created_at).toLocaleTimeString()} · ${label[e.event_type] ?? e.event_type}${e.action ? ` · ${e.action}` : ''}${e.reason ? ` · ${e.reason}` : ''}`), 'No recorded events.');
+}
+async function run(operation) {
+  if (busy) return;
+  busy = true;
+  try {
+    if (operation) {
+      el('execute').disabled = el('retry').disabled = true;
+      const {result, error} = await proxi('execute', operation);
+      if (!result) el('notice').textContent = error;
+      else {
+        const decision = {ALLOW:'Allowed', HOLD:'Approval required', BLOCK:'Blocked'}[result.decision.outcome];
+        el('notice').textContent = `${decision} · ${result.decision.reason}`;
+        if (result.executed && result.result) {
+          el('website').textContent = `${result.result.title} · ${result.result.url}`;
+          el('pageText').textContent = (result.result.text ?? '') + (result.result.truncated ? '\n[Result truncated]' : '');
+        }
+      }
+    }
+    await refresh();
+  } finally { busy = false; }
+}
+el('execute').onclick = () => run(el('capability').value);
+el('retry').onclick = () => run('retry');
+el('stop').onclick = () => { void proxi('stop'); };
+run();
+setInterval(run, 4000);
+</script>
+</html>

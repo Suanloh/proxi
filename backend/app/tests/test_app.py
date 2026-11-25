@@ -85,6 +85,18 @@ def test_agent_management_requires_explicit_opt_in_and_bearer() -> None:
             assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
+def test_dashboard_reads_require_owner_bearer() -> None:
+    token = token_hex(32)
+    settings = Settings(env="testing", test_database_url=None, dev_identity_owner_id=uuid4(),
+                        dev_identity_token=SecretStr(token))
+    with TestClient(create_app(settings)) as client:
+        for path in ("overview", f"agents/{uuid4()}", "trust", "integrations"):
+            url = f"/api/v1/dashboard/{path}"
+            assert client.get(url).status_code == 401
+            assert client.get(url, headers={"Authorization": "Bearer invalid"}).status_code == 401
+            assert client.get(url, headers={"Authorization": f"Bearer {token}"}).status_code == 503
+
+
 def test_credential_codec_rejects_expiry_and_wrong_signature() -> None:
     codec = JwtCredentialCodec(SecretStr(token_hex(32)))
     other = JwtCredentialCodec(SecretStr(token_hex(32)))

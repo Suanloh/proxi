@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Literal, Protocol
 from uuid import UUID, uuid4
 
 from ..core.creds.tokens import CredentialClaims, CredentialCodec, ExpiredCredential, InvalidCredential
@@ -29,7 +29,15 @@ class CapabilityDenied(PermissionError):
     pass
 
 
-def session_status(session: AgentSession, now: datetime) -> SessionStatus:
+class SessionLifetime(Protocol):
+    @property
+    def expires_at(self) -> datetime: ...
+
+    @property
+    def revoked_at(self) -> datetime | None: ...
+
+
+def session_status(session: SessionLifetime, now: datetime) -> SessionStatus:
     if session.revoked_at is not None:
         return "revoked"
     return "expired" if session.expires_at <= now else "active"

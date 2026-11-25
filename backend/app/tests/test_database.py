@@ -652,6 +652,44 @@ def authorization_case(migrated: Database) -> AuthorizationCase:
     return AuthorizationCase(request, owner.id, source.id, cap.id, key, token)
 
 
+def test_dashboard_reads_are_owner_scoped_and_follow_session_state(
+    migrated: Database, authorization_case: AuthorizationCase,
+) -> None:
+    case, request = authorization_case, authorization_case.request
+    with migrated.transaction() as session:
+        users = repository(session, r.User)
+        other = users.add(r.User(email="other-dashboard@example.test"))
+        identity = AgentIdentityService(agent_repository(session), users)
+        other_agent = identity.register(other.id, "Other dashboard agent", r.AgentType.LOCAL)
+        access_service(session, identity, JwtCredentialCodec(case.signing_key)).create_session(other.id, other_agent.id, 120)
+    url = migrated.engine.url.difference_update_query(["hostaddr"])
+    token = token_hex(32)
+    settings = Settings(env="testing", test_database_url=SecretStr(url.render_as_string(hide_password=False)),
+                        credential_signing_key=case.signing_key, dev_identity_owner_id=case.owner_id,
+                        dev_identity_token=SecretStr(token))
+    base = "/api/v1/dashboard"
+    with TestClient(create_app(settings), headers={"Authorization": f"Bearer {token}"}) as client:
+        overview = client.get(f"{base}/overview")
+        assert overview.json() == {"active_sessions": 1, "pending_approvals": 0}
+        assert overview.headers["cache-control"] == "no-store"
+        assert client.get(f"{base}/agents/{other_agent.id}").status_code == 404
+        detail = f"{base}/agents/{request.agent_id}"
+        agent = client.get(detail).json()
+        assert [item["id"] for item in agent["sessions"]] == [str(request.session_id)]
+        assert [item["id"] for item in agent["capabilities"]] == [str(case.capability_id)]
+        assert [item["id"] for item in agent["tasks"]] == [str(request.task_id)]
+        assert not agent["trust"]["score_persisted"] and agent["trust"]["history"] == []
+        assert [(item["agent_id"], item["active_sessions"]) for item in client.get(f"{base}/trust").json()] == [
+            (str(request.agent_id), 1),
+        ]
+        assert {item["id"]: item["connection_status"] for item in client.get(f"{base}/integrations").json()} == {
+            "browser": "unknown", "mcp": "unknown", "local": "unknown",
+        }
+        assert client.post(f"/api/v1/agents/{request.agent_id}/sessions/{request.session_id}/revoke").status_code == 200
+        assert client.get(f"{base}/overview").json()["active_sessions"] == 0
+        assert client.get(detail).json()["sessions"][0]["status"] == "revoked"
+
+
 def test_monitoring_api_correlates_denials_and_limits_visibility(
     migrated: Database, authorization_case: AuthorizationCase,
 ) -> None:
@@ -996,6 +1034,22 @@ def test_browser_flight_demo_and_approval(migrated: Database, flight_site: tuple
             assert result["executed"] is False and result["result"] is None and result["approval_id"] is None
             assert "ActionBlocked" in audit(response) and "ActionExecuted" not in audit(response)
 
+        workspace_url = f"/api/v1/browser/workspace/{agent.id}/{bound.id}/{task.id}"
+
+        def workspace_status():
+            response = client.get(workspace_url, headers=agent_headers)
+            assert response.status_code == 200
+            return response.json()
+
+        status = workspace_status()
+        assert status["agent_name"] == agent.name and status["task_name"] == task.objective
+        assert status["session_status"] == "active"
+        assert {item["id"] for item in status["capabilities"]} == {str(cap) for cap in caps.values()}
+        assert client.get(f"/api/v1/browser/workspace/{other.id}/{other_bound.id}/{task.id}",
+                          headers=agent_headers).status_code == 401
+        assert client.get(f"/api/v1/browser/workspace/{agent.id}/{bound.id}/{uuid4()}",
+                          headers=agent_headers).status_code == 404
+
         nav = submit(payload("browser.navigate"))
         assert nav.status_code == 200 and nav.json()["executed"]
         assert nav.json()["result"]["text"] is None and "ActionExecuted" in audit(nav)
@@ -1004,7 +1058,11 @@ def test_browser_flight_demo_and_approval(migrated: Database, flight_site: tuple
         assert held.status_code == 200 and held.json()["decision"]["outcome"] == "HOLD"
         assert not held.json()["executed"] and requests == ["/fares"]
         approval_id = held.json()["approval_id"]
+        status = workspace_status()
+        assert [item["id"] for item in status["pending_approvals"]] == [approval_id]
+        assert {event["event_type"] for event in status["events"]} >= {"ActionExecuted", "ActionHeld"}
         assert client.post(f"/api/v1/approvals/{approval_id}/approve", headers=owner_headers).status_code == 200
+        assert workspace_status()["pending_approvals"] == []
         approved = submit(read)
         assert approved.status_code == 200 and approved.json()["executed"]
         page = approved.json()["result"]["text"]
