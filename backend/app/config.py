@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     trust_rules: TrustRules = Field(default_factory=TrustRules)
     browser_allowed_pages: tuple[PageURL, ...] = ()
     browser_denied_pages: tuple[PageURL, ...] = ()
+    chrome_extension_id: Annotated[str, Field(pattern=r"^[a-p]{32}$")] | None = None
     mcp_catalog_enabled: bool = False
     local_catalog_enabled: bool = False
 

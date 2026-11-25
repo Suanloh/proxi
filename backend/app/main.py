@@ -11,6 +11,7 @@ from .api.agents import create_agents_router
 from .api.approvals import create_approval_router
 from .api.authz import create_authorization_router
 from .api.browser import create_browser_router
+from .api.browser_experience import create_browser_experience_router
 from .api.dashboard import create_dashboard_router
 from .svcs.dashboard import DashboardQuery, integration_status
 from .api.errors import register_error_handlers
@@ -190,6 +191,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with db.transaction() as session:
             yield DashboardQuery(session, settings.trust_rules), identity_service(session, request)
 
+    @contextmanager
+    def browser_experience_transaction(request: Request) -> Iterator[tuple[Session, AgentIdentityService]]:
+        db: Database | None = request.app.state.database
+        if db is None:
+            raise HTTPException(status_code=503)
+        with db.transaction() as session:
+            yield session, identity_service(session, request)
+
     interpreter = IntentInterpreter(DeepSeekAdapter(
         settings.deepseek_api_key, settings.deepseek_model, settings.deepseek_timeout_seconds,
     ))
@@ -210,6 +219,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     browser = PlaywrightBrowser(settings.browser_allowed_pages, settings.browser_denied_pages)
     app.include_router(create_browser_router(browser, codec, authorization_check_transaction,
                                              record_credential_denial), prefix="/api/v1")
+    app.include_router(create_browser_experience_router(
+        authenticate_owner, browser_experience_transaction, access_service, codec,
+        lambda: browser.has_allowed_pages and codec is not None, settings.chrome_extension_id,
+    ), prefix="/api/v1")
     integrations = IntegrationRegistry()
     integrations.register(MCP_CATALOG, McpCatalogGateway())
     integrations.register(LOCAL_CATALOG, LocalCatalogAdapter())

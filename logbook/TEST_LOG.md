@@ -129,6 +129,14 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 - **Focused PostgreSQL rerun PASS:** From `backend`, `..\.venv\Scripts\python.exe -m pytest -q --tb=short app\tests -k 'dashboard or approval or browser_renderer_is_offline'` — 16 passed, 71 deselected in 13.84 s against disposable loopback PostgreSQL 17. Includes dashboard session revocation, browser flight demo approval, and offline browser renderer coverage. No project `.env`, shared database, or hosted service was used.
 - **Live-stack manual PASS (2026-11-25, user-confirmed):** The Next.js dashboard showed an active session after creation and reload. A revoked session still showed **Revoked** after reload. A backend-seeded pending approval moved to **History** as **Approved** after review and reload, with a review timestamp and no consumed timestamp. These checks used local FastAPI and disposable PostgreSQL; they were not an exhaustive live-stack retest of every screen.
 
+## Prompt 15
+
+- **Targeted backend run:** From `backend`, `..\.venv\Scripts\python.exe -m pytest -q app\tests\test_browser_experience.py app\tests\test_database.py app\tests\test_app.py` with `PROXI_ENV=testing` and no test DSN: **21 passed, 52 skipped**.
+- **Console PASS:** Bundled Chromium opened the offline console against a fixture backend, submitted bound action payloads, displayed a hold and pending approval, retried the exact request, rendered allowed content as untrusted text, and displayed blocks, revocation, expiry, and disconnect. The Stop button closed the page and the launcher cleaned up the context.
+- **Companion PASS:** Bundled Chromium loaded the unpacked MV3 extension in a temporary profile. The actual popup and worker reached a loopback FastAPI fixture using a minted token. Wrong origin, malformed body, owner-token reuse, pairing rotation, and backend disconnect were checked. The fixture stubbed persisted event reads; branded Chrome manual installation was not run.
+- **Manual Google Chrome PASS (2026-11-25, user-confirmed):** The unpacked PROXI Companion popup opened, paired with the local backend, and displayed the supported operations. This confirms installation and pairing, not dispatch or event delivery.
+- **PostgreSQL NOT RUN:** No disposable test DSN. The existing flight demo now checks bound workspace status and projected pending approvals and events, but those database-backed assertions were not executed in this run.
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

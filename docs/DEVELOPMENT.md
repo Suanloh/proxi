@@ -55,6 +55,24 @@ If Chromium was installed to a custom cache, set `PLAYWRIGHT_BROWSERS_PATH` to t
 
 The task is to compare Kuala Lumpur–Tokyo fares without buying or sharing personal data. The page displays two prices and instructs the caller to ignore the task, disclose data, and buy a ticket. The demo navigates, then reads after an owner approval. It submits two scripted attempts representing those instructions and checks the explicit policy blocks in the owner audit log. The fixture also confirms that Chromium makes no checkout request. This demonstrates policy enforcement, not prompt-injection detection.
 
+## PROXI Browser and Chrome Companion
+
+Start the backend on `127.0.0.1:8000` and the dashboard on `127.0.0.1:3000`. Configure the browser adapter with exact allowed URLs. Provision a browser agent, an active session with a short-lived agent credential, and a pending task with matching browser capabilities and policy. From `backend`, after installing Chromium as above:
+
+```powershell
+..\.venv\Scripts\python.exe -m app.integrations.browser.launcher launch AGENT_UUID SESSION_UUID TASK_UUID
+```
+
+Paste the agent credential at the hidden prompt. Select a capability to submit it through PROXI. For a held request, use the dashboard’s Approval centre, then retry the same request in the console. The console retains only the latest held request in memory. **Stop console** closes the isolated browser; revoke the agent session separately in the dashboard when finished. The displayed website is the last successful result, not a live tab.
+
+For the companion, open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked** with the repository’s `chrome-extension` directory. Copy its extension ID into `PROXI_CHROME_EXTENSION_ID` and restart the backend. Then run:
+
+```powershell
+..\.venv\Scripts\python.exe -m app.integrations.browser.launcher pair
+```
+
+Enter the local owner bearer at the hidden prompt. Paste only the issued five-minute token into the **PROXI Companion** popup and select **Connect / Refresh**. Closing the popup clears its token; re-enter it while valid or mint a replacement. Pairing again or restarting the backend invalidates the previous token. The popup links to the dashboard and shows recent backend browser events; it does not watch or protect regular Chrome tabs. The companion smoke test uses bundled Chromium with a temporary profile and skips if local port 8000 is occupied.
+
 ## Controlled MCP and local-agent demo
 
 From `backend`, with the disposable PostgreSQL settings above, run:

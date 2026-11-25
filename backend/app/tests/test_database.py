@@ -1034,6 +1034,22 @@ def test_browser_flight_demo_and_approval(migrated: Database, flight_site: tuple
             assert result["executed"] is False and result["result"] is None and result["approval_id"] is None
             assert "ActionBlocked" in audit(response) and "ActionExecuted" not in audit(response)
 
+        workspace_url = f"/api/v1/browser/workspace/{agent.id}/{bound.id}/{task.id}"
+
+        def workspace_status():
+            response = client.get(workspace_url, headers=agent_headers)
+            assert response.status_code == 200
+            return response.json()
+
+        status = workspace_status()
+        assert status["agent_name"] == agent.name and status["task_name"] == task.objective
+        assert status["session_status"] == "active"
+        assert {item["id"] for item in status["capabilities"]} == {str(cap) for cap in caps.values()}
+        assert client.get(f"/api/v1/browser/workspace/{other.id}/{other_bound.id}/{task.id}",
+                          headers=agent_headers).status_code == 401
+        assert client.get(f"/api/v1/browser/workspace/{agent.id}/{bound.id}/{uuid4()}",
+                          headers=agent_headers).status_code == 404
+
         nav = submit(payload("browser.navigate"))
         assert nav.status_code == 200 and nav.json()["executed"]
         assert nav.json()["result"]["text"] is None and "ActionExecuted" in audit(nav)
@@ -1042,7 +1058,11 @@ def test_browser_flight_demo_and_approval(migrated: Database, flight_site: tuple
         assert held.status_code == 200 and held.json()["decision"]["outcome"] == "HOLD"
         assert not held.json()["executed"] and requests == ["/fares"]
         approval_id = held.json()["approval_id"]
+        status = workspace_status()
+        assert [item["id"] for item in status["pending_approvals"]] == [approval_id]
+        assert {event["event_type"] for event in status["events"]} >= {"ActionExecuted", "ActionHeld"}
         assert client.post(f"/api/v1/approvals/{approval_id}/approve", headers=owner_headers).status_code == 200
+        assert workspace_status()["pending_approvals"] == []
         approved = submit(read)
         assert approved.status_code == 200 and approved.json()["executed"]
         page = approved.json()["result"]["text"]

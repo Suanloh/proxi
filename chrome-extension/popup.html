@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>PROXI Companion</title>
+<link rel="stylesheet" href="popup.css">
+<h1>PROXI Companion</h1>
+<p>Read-only companion. Does not monitor or block activity in this Chrome profile.</p>
+<p id="connection" role="status">Not paired.</p>
+<p>Controlled Playwright browser: <strong id="protection">Unknown</strong></p>
+<form id="pair">
+  <label for="token">Five-minute pairing token</label>
+  <input id="token" type="password" required maxlength="43" autocomplete="off" spellcheck="false">
+  <button type="submit">Connect / Refresh</button>
+</form>
+<p><a id="dashboard" target="_blank" rel="noopener noreferrer">Open local dashboard</a></p>
+<h2>Supported operations</h2><p id="operations">Unavailable</p>
+<h2>Recent PROXI browser events</h2><ul id="events"></ul>
+<script type="module" src="popup.js"></script>
+</html>

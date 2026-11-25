@@ -70,6 +70,14 @@ The endpoint returns HTTP `200` with `request_id`, `outcome` (`ALLOW`, `HOLD`, o
 
 See the [local flight demo](DEVELOPMENT.md#controlled-browser-demo) and [security boundary](SECURITY.md#controlled-browser-boundary).
 
+### Browser workspace and companion
+
+- `GET /api/v1/browser/workspace/{agent_id}/{session_id}/{task_id}` requires a current agent JWT bound to a browser agent and session. The task must belong to the agent and be linked to that session by a browser capability. Returns the bound statuses, current task capabilities, pending task approvals, and up to 20 recent session browser events. This is a status read, not an authorization decision.
+- `POST /api/v1/browser/companion/pairing` requires the local owner bearer, an empty JSON object, exact host `127.0.0.1:8000`, and no `Origin` or query parameters. Requires a configured Chrome extension ID. Returns a five-minute bearer and replaces any previous bearer in the backend process.
+- `POST /api/v1/browser/companion/status` requires the companion bearer, the same host, origin `chrome-extension://<configured ID>`, an empty JSON object, and no query parameters. Returns adapter configuration, supported operations, and up to 20 scoped browser events without URLs, page content, or entity IDs. It cannot execute actions or review approvals.
+
+See [local setup](DEVELOPMENT.md#proxi-browser-and-chrome-companion).
+
 ## Controlled MCP and local-agent tools
 
 | `POST` route | Agent type | Policy and capability action |

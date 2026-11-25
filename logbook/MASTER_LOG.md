@@ -159,6 +159,13 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Result:** `COMPLETE`. Production build and frontend loopback browser smoke passed. All 16 focused PostgreSQL tests passed. On 2026-11-25, the user confirmed approval review and session revocation both persisted after reloading the live dashboard. See the [test log](TEST_LOG.md#prompt-14).
 - **Stop point:** Prompt 14 is complete. No dedicated browser launcher or Chrome extension; wait for explicit authorization.
 
+## Prompt 15 — PROXI Browser & Chrome Extension
+
+- **Date:** 2026-11-25.
+- **Implementation:** Isolated Playwright console bound to a browser agent, session, and task. Existing backend enforcement remains the only browser dispatch path. Added a read-only MV3 companion for local adapter status and scoped browser events, with short-lived pairing and dashboard access.
+- **Verification:** 21 passed, 52 skipped in the targeted backend run. Real Chromium console, unpacked extension service worker and loopback pairing/status, and offline renderer passed. The PostgreSQL workspace and approval assertions were added but skipped without a disposable test DSN.
+- **Stop point:** Prompt 15 implementation is recorded in [the test log](TEST_LOG.md#prompt-15). No claim of general Chrome monitoring or protection. Stop here; optional follow-up is the disposable PostgreSQL run.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).

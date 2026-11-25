@@ -36,6 +36,10 @@ A browser operation requires a credential bound to its agent and session, a matc
 
 A GET is not proof of a read-only server operation. Allowlist only trusted, read-only endpoints; enforce deployment egress controls for private addresses, DNS changes, and other unintended destinations. The adapter does not detect all prompt injection, constrain clients that bypass PROXI, or verify the behaviour of remote servers.
 
+The dedicated browser console uses its own nonpersistent offline context. It renders results as text and keeps the agent credential in the local Python process. The console submits to the existing browser action endpoint; it does not grant permissions or approve requests. Closing it does not revoke the backend session.
+
+The Chrome companion is a read-only view of backend browser events, not an enforcement layer. It has no content scripts, tab monitoring, or profile access. Only the configured popup can message its worker, which calls one fixed loopback status endpoint. The backend validates the host, extension origin, request schema, and short-lived process-local bearer. Origin and Host are request constraints, not proof of identity; keep the backend bound to loopback and do not proxy the companion endpoints externally. No owner bearer is sent to or stored by Chrome.
+
 ### Controlled MCP and local-agent boundary
 
 The gateway calls one built-in read-only MCP tool over an in-process Python MCP SDK connection. The local adapter exposes only the registered catalog lookup. Both are disabled by default. Trusted server code fixes the integration identity, tool name, normalized action, and exact resource scope. Tool descriptions and other server-provided metadata do not grant authority.
