@@ -4,10 +4,51 @@ const el = (id) => document.getElementById(id);
 el('dashboard').href = dashboardUrl;
 let token = '';
 let refreshing = false;
-const labels = { ActionAllowed: 'Allowed', ActionHeld: 'Approval required', ActionBlocked: 'Blocked',
+
+const labels = {
+  ActionAllowed: 'Allowed', ActionHeld: 'Approval required', ActionBlocked: 'Blocked',
   CapabilityRevoked: 'Capability revoked', SessionRevoked: 'Agent session revoked',
   AuthenticationDenied: 'Authentication denied', ExpiredCredentialAttempt: 'Expired agent credential attempt',
-  PolicyViolation: 'Security notification: policy violation', CapabilityViolation: 'Security notification: capability violation' };
+  PolicyViolation: 'Security notification: policy violation', CapabilityViolation: 'Security notification: capability violation',
+};
+
+const obsLabels = {
+  monitoring_started: 'Monitoring started',
+  navigation: 'Navigation',
+  monitoring_stopped: 'Monitoring stopped',
+};
+
+function renderMonitoring(session, events = [], error = '') {
+  const statusEl = el('monitor-status');
+  const errEl = el('monitor-error');
+
+  errEl.textContent = error;
+  errEl.hidden = !error;
+
+  if (session) {
+    const badge = document.createElement('span');
+    badge.className = 'badge-mon';
+    badge.textContent = 'MON';
+    statusEl.replaceChildren(badge, document.createTextNode(`Observing ${session.origin}`));
+    el('monitor-start').hidden = true;
+    el('monitor-stop').hidden = false;
+  } else {
+    statusEl.textContent = 'Not monitoring any tab.';
+    el('monitor-start').hidden = false;
+    el('monitor-stop').hidden = true;
+  }
+
+  el('observed-events').replaceChildren(...events.map((evt) => {
+    const item = document.createElement('li');
+    item.textContent = [
+      new Date(evt.timestamp).toLocaleTimeString(),
+      obsLabels[evt.type] ?? evt.type,
+      evt.origin,
+      evt.reason ? `(${evt.reason})` : '',
+    ].filter(Boolean).join(' · ');
+    return item;
+  }));
+}
 
 function render(message, status) {
   el('connection').textContent = message;
@@ -27,6 +68,7 @@ async function refresh() {
   refreshing = true;
   try {
     const reply = await chrome.runtime.sendMessage({ type: 'status', token });
+    if (!reply) throw new Error('Companion worker did not reply.');
     if (reply.unpair) token = '';
     el('token').required = !token;
     render(reply.status ? 'Connected to local PROXI.' : reply.error, reply.status);
@@ -36,6 +78,31 @@ async function refresh() {
     refreshing = false;
   }
 }
+
+async function updateMonitoring(type) {
+  try {
+    const reply = await chrome.runtime.sendMessage({ type });
+    if (!reply) {
+      showMonitorError('Tab monitoring did not respond. Reopen the popup, or reload PROXI Companion at chrome://extensions.');
+      return;
+    }
+    if (reply.error) {
+      showMonitorError(reply.error);
+      return;
+    }
+    renderMonitoring(reply.session, reply.events);
+  } catch {
+    showMonitorError('Could not reach PROXI Companion. Reopen the popup, or reload the extension at chrome://extensions.');
+  }
+}
+
+function showMonitorError(message) {
+  el('monitor-error').textContent = message;
+  el('monitor-error').hidden = false;
+}
+
+el('monitor-start').addEventListener('click', () => updateMonitoring('monitor_start'));
+el('monitor-stop').addEventListener('click', () => updateMonitoring('monitor_stop'));
 
 el('pair').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -53,4 +120,13 @@ el('pair').addEventListener('submit', (event) => {
   }
   refresh();
 });
+
+updateMonitoring('monitor_state');
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'session' && (changes.monitoredSession || changes.observedEvents)) {
+    updateMonitoring('monitor_state');
+  }
+});
+
 setInterval(refresh, 5000);

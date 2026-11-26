@@ -137,6 +137,19 @@ Append one row per check. Use `PASS` only when execution confirms the expected r
 - **Manual Google Chrome PASS (2026-11-25, user-confirmed):** The unpacked PROXI Companion popup opened, paired with the local backend, and displayed the supported operations. This confirms installation and pairing, not dispatch or event delivery.
 - **PostgreSQL NOT RUN:** No disposable test DSN. The existing flight demo now checks bound workspace status and projected pending approvals and events, but those database-backed assertions were not executed in this run.
 
+## Prompt 16
+
+- **Backend PASS (partial):** From `backend`, `..\.venv\Scripts\python.exe -m pytest -q -rs --durations=8 app\tests` with inherited `PROXI_*` cleared and `PROXI_ENV=testing`: 37 passed, 52 skipped, 0 failed in 30.72 s. Chromium console, unpacked companion, and offline renderer passed; so did JWT expiry/signature and malformed provider output checks.
+- **PostgreSQL NOT RUN:** No disposable test DSN; the Docker engine was unreachable. Migration, persisted browser workspace, identity/authorization, approval concurrency, trust, audit, and MCP tests skipped. No hosted database or project credentials were used.
+- **Frontend PASS:** In `frontend`, `npm.cmd run build` and `npm.cmd test` with Node 24.11.1. Production build and TypeScript passed; one built Next server browser scenario passed against a loopback fixture API (2.82 s test, 3.25 s runner).
+- **Liveness PASS (3/3):** Timed from Uvicorn process launch (factory mode, unique loopback port, testing mode without DSN) to first successful `GET /api/v1/health`, polling at 25 ms intervals between failed attempts: 2,366 ms, 2,030 ms, 2,030 ms. These are not database-readiness checks.
+- **Not measured:** Per-operation latency, approval duration, revocation propagation, runtime error rate, and instrumented code coverage. No live DeepSeek call or integrated operator walkthrough. See the [acceptance matrix](../docs/INTEGRATION_VALIDATION.md#functional-acceptance-matrix).
+
+## Experience follow-up — ordinary Chrome tabs
+
+- `node --test chrome-extension\monitoring.test.mjs`: 2 passed using mocked Chrome APIs. Covers opt-in, tab isolation, origin-only records, exit, stop, and tab closure.
+- Existing browser experience tests: 1 passed, 1 skipped because loopback port 8000 was occupied. Real Chrome toolbar opt-in was not exercised; follow the [manual steps](../docs/DEVELOPMENT.md#proxi-browser-and-chrome-companion).
+
 ## Entry template
 
 | Test ID | Description | Expected result | Actual result | Status | Implementation / execution method | Follow-up action |

@@ -16,7 +16,7 @@ PROXI uses Supabase PostgreSQL, SQLAlchemy 2 and Alembic. Only the backend conne
 
 Alembic manages the `proxi` schema, including its own version table. App startup does not migrate or verify database connectivity; the liveness endpoint works without a DSN. The initial downgrade drops PROXI tables and their data. Verify downgrades only against disposable databases unless explicitly approved and backed up.
 
-In testing, PROXI ignores the root `.env` and does not fall back to `PROXI_DATABASE_URL`. Use an independent local PostgreSQL instance and set `PROXI_TEST_DATABASE_URL` in the shell. See [isolated test setup](DEVELOPMENT.md#backend).
+In testing, PROXI ignores the root `.env` and does not fall back to `PROXI_DATABASE_URL`. Use an independent local PostgreSQL instance and set `PROXI_TEST_DATABASE_URL` in the shell. See [isolated test setup](DEVELOPMENT.md#backend). The migration round-trip and repository tests skip without this DSN; neither a successful build nor `/api/v1/health` verifies migrations, connectivity, or audit persistence.
 
 ## Logical relationships
 

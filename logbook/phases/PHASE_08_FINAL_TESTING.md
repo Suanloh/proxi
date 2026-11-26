@@ -1,6 +1,6 @@
 # Phase 08 — Final Testing
 
-**Status:** NOT STARTED
+**Status:** BLOCKED — Prompt 16 validation was partial; MVP acceptance is not met.
 
 This is a documentation checkpoint, not a numbered implementation prompt.
 
@@ -10,16 +10,16 @@ Verify integrated product behavior, security invariants and release readiness.
 
 ## Implementation record
 
-Only foundation-level checks are recorded in the [test log](../TEST_LOG.md). No final end-to-end assessment has run.
+Reviewed the six layers and supported execution routes; documented results and the controlled demonstration in the [validation report](../../docs/INTEGRATION_VALIDATION.md).
 
 ## Dependencies and blockers
 
-Requires implemented features and declared integration scope; liveness does not establish readiness.
+DeepSeek is the accepted intent provider. Live DeepSeek interpretation was not verified. No disposable PostgreSQL test connection was available. A liveness response establishes neither database readiness nor authorization.
 
 ## Verification
 
-NOT RUN. Plan end-to-end allow, hold, block and revocation checks plus regression and accessibility coverage.
+Partial: backend 37 passed and 52 PostgreSQL-backed tests skipped. Frontend production build and fixture smoke passed. See the [test log](../TEST_LOG.md#prompt-16) for timings and evidence, and the [known issues](../KNOWN_ISSUES.md) for remaining limitations.
 
 ## Next handoff
 
-Review remaining [known issues](../KNOWN_ISSUES.md) and record explicit evidence for each release claim. See [current status](../CURRENT_STATUS.md) for the active handoff; wait for explicit authorization.
+Re-run migrations and the complete suite on disposable PostgreSQL, then rehearse the live local operator flow with DeepSeek. See [current status](../CURRENT_STATUS.md); wait for explicit authorization.

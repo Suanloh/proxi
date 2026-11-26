@@ -55,6 +55,19 @@ If Chromium was installed to a custom cache, set `PLAYWRIGHT_BROWSERS_PATH` to t
 
 The task is to compare Kuala Lumpur–Tokyo fares without buying or sharing personal data. The page displays two prices and instructs the caller to ignore the task, disclose data, and buy a ticket. The demo navigates, then reads after an owner approval. It submits two scripted attempts representing those instructions and checks the explicit policy blocks in the owner audit log. The fixture also confirms that Chromium makes no checkout request. This demonstrates policy enforcement, not prompt-injection detection.
 
+## Prompt 16 demonstration
+
+This is a controlled local rehearsal, not a single live acceptance run. Do not proceed if PostgreSQL cases skip or fail. Install dependencies and Chromium as above, configure a **disposable** loopback database, then run from `backend`:
+
+```powershell
+..\.venv\Scripts\python.exe -m pytest -q -rs app\tests\test_database.py -k 'migration_round_trip or identity_api_persists_registration or dashboard_reads_are_owner_scoped or intent_api_persists_proposal or policy_lifecycle_and_immutable_revisions or browser_flight_demo_and_approval or action_approval_workflow or trust_enforcement_and_owner_review or controlled_tool_gateway'
+```
+
+1. Use the identity and dashboard checks to show registration and owner-scoped persisted state. Use the intent and policy checks to show validation, proposal review, and version activation. The intent test fakes the **DeepSeek** provider: no live LLM call is made. These checks run as separate scenarios.
+2. Use the flight scenario to show the real FastAPI authorization path, Playwright Chromium, and PostgreSQL. It provisions its own agent, policy, and capabilities. It navigates, holds the read, reviews the approval, retries the same request, and displays two synthetic fares. The mock page's untrusted instruction and the scripted purchase and disclosure requests are **simulated**. Verify `BLOCK`, no checkout request, and correlated audit history. The scenario revokes the session and verifies subsequent access does not execute.
+3. Use the approval and trust checks to show replay prevention, concurrent retry handling, restrictions, and revocation. Use the catalog check for one real in-process MCP SDK lookup; no arbitrary third-party tool is involved.
+4. For a manual UI walkthrough, start the local backend and dashboard with a migrated demo database and test-only owner. Register the agent in the dashboard. Use the [owner intent API](API.md#intent-proposals) to submit only synthetic task text if choosing to call live DeepSeek. Review the resulting proposal before using its ID to create and approve a policy version in the dashboard. Issue the session credential and exact task/action/resource capabilities through the [access API](API.md#agent-sessions-and-access-prerequisites); policy approval does not issue them. Allowlist only the exact demo page and use the console below. Review held actions in the dashboard, retry them in the console, and inspect Audit and Security Monitoring before revoking the session. Pairing the Chrome companion is optional and demonstrates status visibility, not enforcement.
+
 ## PROXI Browser and Chrome Companion
 
 Start the backend on `127.0.0.1:8000` and the dashboard on `127.0.0.1:3000`. Configure the browser adapter with exact allowed URLs. Provision a browser agent, an active session with a short-lived agent credential, and a pending task with matching browser capabilities and policy. From `backend`, after installing Chromium as above:
@@ -71,7 +84,9 @@ For the companion, open `chrome://extensions`, enable **Developer mode**, and ch
 ..\.venv\Scripts\python.exe -m app.integrations.browser.launcher pair
 ```
 
-Enter the local owner bearer at the hidden prompt. Paste only the issued five-minute token into the **PROXI Companion** popup and select **Connect / Refresh**. Closing the popup clears its token; re-enter it while valid or mint a replacement. Pairing again or restarting the backend invalidates the previous token. The popup links to the dashboard and shows recent backend browser events; it does not watch or protect regular Chrome tabs. The companion smoke test uses bundled Chromium with a temporary profile and skips if local port 8000 is occupied.
+Enter the local owner bearer at the hidden prompt. Paste only the issued five-minute token into the **PROXI Companion** popup and select **Connect / Refresh**. Closing the popup clears its token; re-enter it while valid or mint a replacement. Pairing again or restarting the backend invalidates the previous token. The popup links to the dashboard and shows recent backend browser events. The companion smoke test uses bundled Chromium with a temporary profile and skips if local port 8000 is occupied.
+
+To observe a regular tab without pairing, reload the unpacked companion, open an ordinary HTTP(S) page, click the toolbar icon, and select **Monitor this tab**. The `MON` badge marks the selected tab. Follow a link within the same origin and reopen the popup to see the observation. A second tab is ignored. **Stop monitoring**, closing the tab, or navigating away from the origin ends observation. The local list contains at most 25 entries and clears on browser restart or extension reload. It does not block any action or send observations to the backend. From the repo root, run `node --test chrome-extension\monitoring.test.mjs` for the worker tests.
 
 ## Controlled MCP and local-agent demo
 

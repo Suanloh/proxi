@@ -1,11 +1,14 @@
 # Current status
 
 - **Latest completed prompt:** Prompt 14 — PROXI Dashboard & Frontend (`COMPLETE`; production build, browser smoke, focused PostgreSQL tests, and manual approval and session persistence checks passed).
-- **Prompt 15 checkpoint:** Browser console and Chrome companion implemented; Chromium smoke tests passed. PostgreSQL workspace verification remains pending. Stop at Prompt 15.
+- **Prompt 15 checkpoint:** Browser console and Chrome companion implemented; Chromium smoke tests passed. PostgreSQL workspace verification remains pending.
 - **Frontend checkpoint:** [Phase 07 — Frontend](phases/PHASE_07_FRONTEND.md).
 - **Integration checkpoint:** [Phase 05 — Browser Integration](phases/PHASE_05_BROWSER_INTEGRATION.md) (`COMPLETE`), with the Prompt 13 catalog follow-up recorded. Phase numbers are checkpoint IDs, not prompt numbers.
 - **Overall status:** `IN PROGRESS` — deterministic authorization, human review, guarded browser and catalog dispatch, and dynamic trust restrictions are available; no hosted rollout.
 - **Status vocabulary:** `NOT STARTED`, `IN PROGRESS`, `BLOCKED`, `TESTING`, `COMPLETE`. Use evidence rather than completion percentages.
+
+- **Prompt 16 validation:** `BLOCKED` for MVP acceptance. DeepSeek is the accepted intent provider; its live workflow was not verified. Backend regression without PostgreSQL: 37 passed, 52 skipped; frontend production build and fixture smoke passed. Workspace persistence, migrations, and critical guarded-dispatch cases were not re-run. See the [validation report](../docs/INTEGRATION_VALIDATION.md) and [test log](TEST_LOG.md#prompt-16).
+- **Next:** Provision disposable PostgreSQL and verify the DeepSeek workflow during the live-stack rehearsal. Do not mark Prompt 16 complete on the basis of fixtures or liveness.
 
 ## Architecture layers
 

@@ -1,6 +1,6 @@
 # Security
 
-Run both apps on loopback. Configuration examples contain no credentials. Keep real configuration in ignored env files or process variables; keep the frontend API base URL server-side and credential-free.
+Run both apps on loopback. The current release is not production-certified; see the [Prompt 16 results](INTEGRATION_VALIDATION.md#security-testing). Enforcement covers only operations that enter the supported PROXI routes; it cannot protect ordinary Chrome tabs or clients that connect directly to websites or tools. Configuration examples contain no credentials. Keep real configuration in ignored env files or process variables; keep the frontend API base URL server-side and credential-free.
 
 The API suppresses raw exception details in responses. Application startup/error events are JSON and do not include request bodies or exception messages. The ASGI server has its own exception and access logs; do not put credentials in URLs or exception text.
 
@@ -28,7 +28,7 @@ The first failing check determines the reason. Policy ID order breaks ties for d
 
 The controller accepts only explicitly registered integration/action adapters. Before synchronous dispatch it evaluates again in a fresh transaction, calls the required decision recorder, and holds the agent row lock through dispatch. Agent, session, credential, capability, and policy lifecycle mutations share that lock; policy mutations that change active authority take it before the policy lock. The recorder must be synchronous, must not re-enter these mutations, and must not log credentials or raw parameters. If recording fails, dispatch does not start. The controller accepts an injected recorder. The browser API uses transaction-scoped decision and execution events for persistent audit history; it has no independent pre-dispatch audit sink.
 
-Adapters must execute the exact authorized action and resource, validate action-specific parameters, and finish without scheduling deferred work. A `HOLD`, `BLOCK`, or missing adapter does not dispatch. The [browser endpoint](API.md#controlled-browser) dispatches only navigation and reading; the [check endpoint](API.md#authorization-check) never dispatches. No MCP executor is registered.
+Adapters must execute the exact authorized action and resource, validate action-specific parameters, and finish without scheduling deferred work. A `HOLD`, `BLOCK`, or missing adapter does not dispatch. The [browser endpoint](API.md#controlled-browser) dispatches only navigation and reading; the [check endpoint](API.md#authorization-check) never dispatches. The [MCP and local-agent endpoints](API.md#controlled-mcp-and-local-agent-tools) can dispatch only their built-in catalog lookups, and only when explicitly enabled. No generic MCP executor is registered.
 
 ### Controlled browser boundary
 
@@ -38,7 +38,7 @@ A GET is not proof of a read-only server operation. Allowlist only trusted, read
 
 The dedicated browser console uses its own nonpersistent offline context. It renders results as text and keeps the agent credential in the local Python process. The console submits to the existing browser action endpoint; it does not grant permissions or approve requests. Closing it does not revoke the backend session.
 
-The Chrome companion is a read-only view of backend browser events, not an enforcement layer. It has no content scripts, tab monitoring, or profile access. Only the configured popup can message its worker, which calls one fixed loopback status endpoint. The backend validates the host, extension origin, request schema, and short-lived process-local bearer. Origin and Host are request constraints, not proof of identity; keep the backend bound to loopback and do not proxy the companion endpoints externally. No owner bearer is sent to or stored by Chrome.
+The Chrome companion is not an enforcement layer. It displays backend browser events and can observe navigation in one ordinary HTTP(S) tab after explicit opt-in. It has no content scripts or blanket tab permissions. It keeps up to 25 observation entries (event type, origin, timestamp, and optional stop reason) in extension session storage; it neither stores full URLs nor sends observations to PROXI. Only the configured popup can message its worker. The existing backend status feature calls one fixed loopback endpoint. The backend validates the host, extension origin, request schema, and short-lived process-local bearer. Origin and Host are request constraints, not proof of identity; keep the backend bound to loopback and do not proxy the companion endpoints externally. No owner bearer is sent to or stored by Chrome.
 
 ### Controlled MCP and local-agent boundary
 

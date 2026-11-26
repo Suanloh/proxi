@@ -1,9 +1,12 @@
 import asyncio
+import logging
 
 import httpx2
 from pydantic import BaseModel, Field, SecretStr
 
 from ...svcs.intent import IntentFailure, IntentFailureCode
+
+logger = logging.getLogger("proxi.deepseek")
 
 _ENDPOINT = "https://api.deepseek.com/chat/completions"
 _MAX_RESPONSE_BYTES = 256 * 1024
@@ -78,7 +81,11 @@ class DeepSeekAdapter:
                         body.extend(chunk)
         except (TimeoutError, httpx2.TimeoutException):
             raise IntentFailure(IntentFailureCode.TIMEOUT) from None
-        except httpx2.HTTPError:
+        except httpx2.HTTPStatusError as exc:
+            logger.warning("DeepSeek request failed: upstream_http_status=%d", exc.response.status_code)
+            raise IntentFailure(IntentFailureCode.PROVIDER_ERROR) from None
+        except httpx2.HTTPError as exc:
+            logger.warning("DeepSeek request failed: client_error_type=%s", type(exc).__name__)
             raise IntentFailure(IntentFailureCode.PROVIDER_ERROR) from None
 
         try:

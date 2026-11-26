@@ -95,6 +95,24 @@ def test_adapter_classifies_failures(response, code: IntentFailureCode) -> None:
     assert str(exc.value) == code.value
 
 
+@pytest.mark.parametrize("upstream_status", [401, None])
+def test_provider_failure_logs_only_safe_metadata(caplog: pytest.LogCaptureFixture, upstream_status: int | None) -> None:
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        if upstream_status is None:
+            raise httpx2.ConnectError("private-network-diagnostic", request=request)
+        return httpx2.Response(upstream_status, text="private-provider-body")
+
+    adapter = DeepSeekAdapter(SecretStr("test-key"), "test-model", 1, transport=httpx2.MockTransport(respond))
+    with pytest.raises(IntentFailure) as exc:
+        asyncio.run(adapter.suggest("private-task-text"))
+
+    assert exc.value.code == IntentFailureCode.PROVIDER_ERROR
+    detail = "client_error_type=ConnectError" if upstream_status is None else f"upstream_http_status={upstream_status}"
+    assert [record.getMessage() for record in caplog.records if record.name == "proxi.deepseek"] == [
+        f"DeepSeek request failed: {detail}",
+    ]
+
+
 def test_adapter_times_out_when_provider_stalls() -> None:
     async def respond(_: httpx2.Request) -> httpx2.Response:
         await asyncio.sleep(10)

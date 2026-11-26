@@ -8,14 +8,14 @@ The starting worktree contained project instructions and two agent documents. Th
 
 | Layer | Responsibility | Home |
 | --- | --- | --- |
-| Experience | Dashboard, controlled browser UI and Chrome extension | `frontend/` for the Next.js shell; other UIs planned |
+| Experience | Owner dashboard, standalone browser console, and read-only Chrome companion | `frontend/`, `backend/app/integrations/browser/launcher.py`, `chrome-extension/` |
 | Integration | Translate browser, MCP and local agent requests into application calls | `backend/app/integrations/` |
 | Identity & Authorization | Establish agent identity, session validity, credential state and capability scope | `core/{identity,sessions,creds,capabilities}` |
 | Intelligence & Trust | Interpret intent, analyze behavior and assess dynamic trust; inputs are advisory | `core/{intent,behaviour,trust}` |
 | Policy & Enforcement | Evaluate policy, authorize actions, coordinate approvals and enforce decisions | `core/{policies,authz,enforcement,approvals}` |
 | Data & Audit | Persist state and policy history, record audit/security events and deliver outbound IO | `infra/{db,repos,events,creds,llm}` |
 
-These are logical responsibilities within one Python backend deployment, not six network services. The HTTP boundary exposes liveness and [local-only agent identity management](DEVELOPMENT.md#agent-identity-api-local-development-only). The identity service owns registration and lifecycle decisions, with persistence behind an owner-scoped repository. Agent JWT authentication and deterministic policy evaluation are implemented. The [enforcement controller](SECURITY.md#authorization-and-enforcement) revalidates before dispatch, but no production executor or decision sink is wired. The Next.js experience shell is a separate process, not a backend domain service.
+These are logical responsibilities within one Python backend deployment, not six network services. The HTTP boundary exposes liveness and [local-only agent identity management](DEVELOPMENT.md#agent-identity-api-local-development-only). The identity service owns registration and lifecycle decisions, with persistence behind an owner-scoped repository. Agent JWT authentication and deterministic policy evaluation are implemented. The [enforcement controller](SECURITY.md#authorization-and-enforcement) revalidates before dispatching to controlled adapters. It persists decision and execution events in application transactions, without an independent pre-dispatch audit sink. The Next.js experience shell is a separate process, not a backend domain service.
 
 ## Hexagonal boundaries and dependency direction
 
@@ -43,7 +43,13 @@ The backend owns the PostgreSQL engine lifecycle. Future use cases can group rep
 
 ## Control Plane and Data Plane
 
-The **Control Plane** owns policy, identity/capability administration, approval decisions and audit visibility. The future **Data Plane** handles individual action requests and performs only the authorized operation within the effective resource restrictions. Both use the same application/domain boundaries; they are not separate backend deployments. Phase 01 does not route or execute agent actions.
+The **Control Plane** owns policy, identity/capability administration, approval decisions, and audit visibility. The **Data Plane** handles guarded browser and catalog actions. Both run in one FastAPI process. A control-plane approval changes stored state; only a subsequent agent request can dispatch after fresh evaluation.
+
+### Prompt 16 dependency review
+
+A static scan of 88 non-test backend modules found 237 explicit internal import edges and no cycles in those imports. It does not establish the absence of runtime dependency cycles. Three read services (dashboard, browser workspace, and monitoring) import concrete SQLAlchemy infrastructure; several core and service modules import API schema types. These are deviations from the hexagonal target above. Do not copy them into new enforcement paths.
+
+The browser and registered catalog routes use the same `EnforcementController` and `AuthorizationEngine`. The agent access endpoint provides prerequisites only; the authorization check endpoint uses the same engine but does not dispatch. HTTP credential binding and the engine's persisted credential check are separate checks, not two policy engines. No alternate protected execution route was found in the supported routes reviewed. This does not cover traffic or tool execution outside PROXI. See the [integration validation report](INTEGRATION_VALIDATION.md).
 
 ## Advisory intent interpretation
 

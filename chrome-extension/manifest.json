@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "PROXI Companion",
-  "version": "0.1.0",
-  "description": "Read-only status and browser security events from local PROXI.",
+  "version": "0.2.0",
+  "description": "Read-only status, browser security events, and opt-in tab observation for local PROXI.",
+  "permissions": ["activeTab", "storage"],
   "background": {"service_worker": "worker.js", "type": "module"},
   "action": {"default_popup": "popup.html", "default_title": "PROXI Companion"},
   "host_permissions": ["http://127.0.0.1/*"],

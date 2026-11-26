@@ -2,6 +2,11 @@
 
 Newest prompt first. Describe actual changes, not planned work. Record test outcomes in the [test log](TEST_LOG.md).
 
+## Prompt 16 — Full System Integration & Security Validation
+
+- **Documented:** Actual implementation boundaries, acceptance gaps, startup measurements, and a controlled [demo runbook](../docs/DEVELOPMENT.md#prompt-16-demonstration).
+- **Validated:** Backend checks available without PostgreSQL and a production frontend build plus fixture smoke. No runtime changes. See [test evidence](TEST_LOG.md#prompt-16).
+
 ## Prompt 13 — MCP & Local Agent Integration
 
 - **Added:** Python MCP SDK gateway and local adapter for one read-only catalog lookup, plus trusted process-local integration management.

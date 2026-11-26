@@ -4,7 +4,22 @@
 <title>PROXI Companion</title>
 <link rel="stylesheet" href="popup.css">
 <h1>PROXI Companion</h1>
-<p>Read-only companion. Does not monitor or block activity in this Chrome profile.</p>
+<p>Passive companion. Does not authorize or block actions in regular Chrome tabs.</p>
+
+<section class="card">
+  <h2>Tab observation (opt-in)</h2>
+  <p id="monitor-status" role="status">Not monitoring any tab.</p>
+  <p id="monitor-error" class="error" hidden></p>
+  <div class="actions">
+    <button id="monitor-start" type="button">Monitor this tab</button>
+    <button id="monitor-stop" type="button" hidden>Stop monitoring</button>
+  </div>
+  <h3>Recent tab observations</h3>
+  <ul id="observed-events"></ul>
+</section>
+
+<hr>
+
 <p id="connection" role="status">Not paired.</p>
 <p>Controlled Playwright browser: <strong id="protection">Unknown</strong></p>
 <form id="pair">

@@ -18,6 +18,27 @@ Track defects, advisories and verification gaps separately from planned function
 - **Observed:** The [browser spot check](TEST_LOG.md#prompt-015) verified focus via programmatic activation only; native Tab/Enter and the full accessibility audit were not verified.
 - **Workaround:** No runtime workaround needed for an unconfirmed defect. Use a real keyboard or a browser harness that sends native key events for follow-up verification.
 
+## KI-003 — Intent provider scope confirmed
+
+- **Type / severity:** Scope decision; no security defect implied.
+- **Status:** Closed. DeepSeek is the accepted provider; Gemini is out of scope.
+- **Observed:** The application wires DeepSeek. There is no Gemini integration. The existing provider tests mock DeepSeek rather than exercising a live provider.
+- **Next action:** Verify live DeepSeek interpretation during the operator rehearsal. See the [API contract](../docs/API.md#intent-proposals).
+
+## KI-004 — Final persistence and enforcement checks not re-run
+
+- **Type / severity:** Verification gap; blocks MVP sign-off.
+- **Status:** Open.
+- **Observed:** 52 PostgreSQL-backed checks skipped without a disposable test DSN, including workspace persistence, approval concurrency, the flight scenario, and MCP dispatch. Frontend smoke uses a fixture API.
+- **Next action:** Run the full suite on disposable PostgreSQL, then rehearse the [live operator path](../docs/DEVELOPMENT.md#prompt-16-demonstration).
+
+## KI-005 — Local enforcement and audit boundaries
+
+- **Type / severity:** Design limitation; not a production deployment boundary.
+- **Status:** Open.
+- **Observed:** Owner authentication is a local developer bearer. Direct website and tool traffic are outside PROXI. Audit history has no independent tamper evidence; external effects are not atomic with audit persistence.
+- **Mitigation:** Use loopback only, trusted read-only demo endpoints, and deployment egress restrictions as described in [Security](../docs/SECURITY.md). Production identity and durable independent audit are separate work.
+
 ## Entry template
 
 - **Issue ID and title:** KI-NNN and a short summary in the heading.

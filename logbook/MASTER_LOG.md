@@ -166,6 +166,14 @@ Append entries in prompt execution order. Dates below use local time; historical
 - **Verification:** 21 passed, 52 skipped in the targeted backend run. Real Chromium console, unpacked extension service worker and loopback pairing/status, and offline renderer passed. The PostgreSQL workspace and approval assertions were added but skipped without a disposable test DSN.
 - **Stop point:** Prompt 15 implementation is recorded in [the test log](TEST_LOG.md#prompt-15). No claim of general Chrome monitoring or protection. Stop here; optional follow-up is the disposable PostgreSQL run.
 
+## Prompt 16 — Full System Integration & Security Validation
+
+- **Date:** 2026-11-26.
+- **Preconditions:** The wired intent provider is DeepSeek, not Gemini. Prompt 15's PostgreSQL workspace checks were still pending.
+- **Work:** Reviewed six architecture layers and supported dispatch routes, ran isolated backend and frontend checks, measured loopback liveness startup, and updated the demonstration runbook and [validation report](../docs/INTEGRATION_VALIDATION.md). No runtime code changed.
+- **Result:** `BLOCKED`. Backend: 37 passed, 52 PostgreSQL-backed cases skipped. Frontend production build and fixture smoke passed. No live provider or single live-stack demo was verified.
+- **Stop point:** The operator confirmed DeepSeek is the accepted provider; Gemini is out of scope. Provision disposable PostgreSQL and verify live DeepSeek interpretation before signing off. Do not claim production readiness.
+
 ## Entry template
 
 - **Date:** YYYY-MM-DD (note source for historical entries).
