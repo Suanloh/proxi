@@ -76,7 +76,14 @@ Start the backend on `127.0.0.1:8000` and the dashboard on `127.0.0.1:3000`. Con
 ..\.venv\Scripts\python.exe -m app.integrations.browser.launcher launch AGENT_UUID SESSION_UUID TASK_UUID
 ```
 
-Paste the agent credential at the hidden prompt. Select a capability to submit it through PROXI. For a held request, use the dashboard’s Approval centre, then retry the same request in the console. The console retains only the latest held request in memory. **Stop console** closes the isolated browser; revoke the agent session separately in the dashboard when finished. The displayed website is the last successful result, not a live tab.
+For the `browser.read` approval walkthrough:
+
+1. Open the dashboard’s **Approval centre** first. Verify the active policy version lists `browser.read` under **Actions requiring approval**, not **Allowed actions**, and that the read capability matches the task and exact URL. Check the session and capability expiry, then mint an agent credential just before launch. The JWT lasts at most five minutes, independent of the five-minute action approval window, and neither the credential nor the capability can outlive the session.
+2. Paste the JWT at the hidden prompt and submit `browser.read` in this isolated console. Only **Approval required** (`HOLD`) creates a pending action approval; a successful status poll, an allowed or blocked action, and extension tab activity do not. After `HOLD`, match the pending entry by request ID. The **Pending** view refreshes every 15 seconds while visible by default; use **Refresh now** to check immediately.
+3. Approve the entry, then click **Retry held request** in the *same* console. The console retains only the latest held request in memory. Confirm the page text appears, then check **Audit** for `ActionHeld`, `ApprovalGranted` and `ActionExecuted`. Revoke the session in the dashboard and verify the console disables submission and the audit log records `SessionRevoked`.
+4. If the JWT expires, mint a replacement for the same session if the session and capability are still active. Relaunching clears the held request, so submit again and approve the new ID. If only the approval expired, find it under **History** and resubmit from the current console to get a new ID.
+
+**Stop console** closes the isolated browser without revoking the session. The displayed website is the last successful result, not a live tab.
 
 For the companion, open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked** with the repository’s `chrome-extension` directory. Copy its extension ID into `PROXI_CHROME_EXTENSION_ID` and restart the backend. Then run:
 

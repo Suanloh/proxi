@@ -35,7 +35,7 @@ function nativeForm(html, button) {
   return data;
 }
 
-test('dashboard renders backend data, forwards filters and approval reviews, and refreshes state', { timeout: 30000 }, async (t) => {
+test('dashboard renders backend data, forwards filters and approval reviews, and refreshes state', { timeout: 45000 }, async (t) => {
   const calls = [];
   let state = 'PENDING';
   let sessions = 7;
@@ -48,7 +48,7 @@ test('dashboard renders backend data, forwards filters and approval reviews, and
     const path = new URL(req.url, 'http://localhost').pathname.replace('/api/v1/', '');
     const trust = { score: 80, score_persisted: true, band: 'trusted' };
     const approval = { id, status: state, reason: 'Fixture review reason', expires_at: now, policy_version_ids: [],
-      request: { agent_id: id, session_id: id, action: 'catalog.lookup', resource: 'fixture catalog', task_id: id } };
+      request: { agent_id: id, session_id: id, action: 'browser.read', resource: 'https://example.org/fares', task_id: id } };
     switch (path) {
       case 'agents': return send(200, [{ id, name: 'Fixture agent', type: 'local', status: 'active', created_at: now }]);
       case `agents/${id}`: return send(200, { id, name: 'Fixture agent', type: 'local', status: 'active', created_at: now });
@@ -136,7 +136,14 @@ test('dashboard renders backend data, forwards filters and approval reviews, and
   await context.addCookies([{ name: cookie.split('=')[0], value: cookie.split('=')[1], url: origin }]);
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
-  await page.goto(`${origin}${path}`);
+  state = 'NONE';
+  await page.goto(`${origin}/approvals`);
+  await page.getByText('No requests awaiting review.').waitFor();
+  state = 'PENDING';
+  const heldRequest = page.getByRole('link', {name: 'browser.read'});
+  await heldRequest.waitFor({ timeout: 20000 });
+  await heldRequest.click();
+  await page.waitForURL(`${origin}${path}`);
   page.once('dialog', (dialog) => dialog.dismiss());
   await page.getByRole('button', {name: 'Reject request'}).click();
   assert.equal(calls.some((call) => call.startsWith('POST ')), false);

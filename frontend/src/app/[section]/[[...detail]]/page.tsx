@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ownerCookie } from "@/lib/api";
 import type { Query } from "@/lib/contracts";
-import { identifier } from "@/lib/validation";
+import { identifier, queryValue } from "@/lib/validation";
 import { AgentPage, Agents, TrustPage } from "@/features/dashboard/agents";
 import { Approvals } from "@/features/dashboard/approvals";
 import { Refresh, ThemeSettings } from "@/features/dashboard/controls";
@@ -47,5 +47,7 @@ export default async function SectionPage({params, searchParams}: {params: Promi
     integrations: <IntegrationPanel />,
     settings: <Panel title="Appearance"><ThemeSettings /></Panel>,
   }[key];
-  return <><PageHeading title={id ? detailTitle! : title} description={id ? undefined : description} controls={key !== "settings" && <Refresh key={key} auto={key === "monitor"} />} />{content}</>;
+  const pendingApprovals = key === "approvals" && !id && queryValue(query, "history") !== "true";
+  const autoRefresh = key === "monitor" || pendingApprovals;
+  return <><PageHeading title={id ? detailTitle! : title} description={id ? undefined : description} controls={key !== "settings" && <Refresh key={`${key}:${autoRefresh}`} auto={autoRefresh} />} />{content}</>;
 }
